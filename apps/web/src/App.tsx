@@ -94,7 +94,7 @@ export function App() {
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">P</span>
           <strong>PineTerm</strong>
-          <span className="milestone-label">Milestone 1</span>
+          <span className="milestone-label">Milestone 2</span>
         </div>
         <nav aria-label="Application">
           {sessionState === 'signed-in' && <button type="button" ref={settingsButton} onClick={() => setPanel('security')}>Settings</button>}
@@ -143,14 +143,14 @@ export function App() {
             {error && <p className="message error" role="alert">{error}</p>}
             <section className="foundation-panel" aria-labelledby="readiness-title">
               <h2 id="readiness-title">A running shell, not a simulated terminal</h2>
-              <p>Administrator sessions, scoped API keys and this About/source surface are available. No chart or market feed is connected in milestone 1, and no live execution is enabled.</p>
+              <p>Administrator sessions, scoped API keys and authoritative Binance/Coinbase market services are available. Historical CSV import/export is supported by the API. Chart UI is the next milestone; no live execution is enabled.</p>
               <button type="button" className="primary" onClick={() => setPanel('security')}>Manage API keys</button>
             </section>
             <section aria-labelledby="capabilities-title">
               <h2 id="capabilities-title">Capability readiness</h2>
               <dl className="readiness-list">
                 <div><dt>Login and security settings</dt><dd><span className="status">Available now</span> · single administrator, session protection and scoped keys</dd></div>
-                <div><dt>Real market data</dt><dd>Not implemented · Binance, Coinbase and CSV datasets are planned for milestone 2</dd></div>
+                <div><dt>Real market data</dt><dd><span className="status">Available via API</span> · Binance Spot, Coinbase Exchange, confirmed-bar streams and historical CSV datasets</dd></div>
                 <div><dt>Charts and workspaces</dt><dd>Not implemented · Vela charts, drawings and saved layouts are planned for milestone 3</dd></div>
                 <div><dt>Pine and strategy testing</dt><dd>Not implemented · PineTS indicators and isolated backtests are planned for milestone 4</dd></div>
                 <div><dt>Paper trading and replay</dt><dd>Not implemented · server-authoritative paper accounts are planned for milestone 5</dd></div>
@@ -165,7 +165,7 @@ export function App() {
       <footer className="app-footer">
         <span>PineTerm · AGPL-3.0-only</span>
         <span>Chart technology: <a href="https://velacharts.dev" target="_blank" rel="noopener noreferrer">Vela by LuxAlgo</a> · not yet mounted</span>
-        <span>No market data or trading is active</span>
+        <span>Market API available · trading disabled</span>
       </footer>
       {panel === 'security' && sessionState === 'signed-in' && <SecuritySettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} />}
       {panel === 'about' && <About client={client} onClose={closePanel} />}

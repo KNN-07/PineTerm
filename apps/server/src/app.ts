@@ -14,11 +14,15 @@ import { InvalidationHub } from './events.js';
 import { registerRoutes } from './routes.js';
 import { SecurityBoundary } from './security.js';
 import { SecretStore } from './secrets.js';
+import type { MarketTransport } from '../../../packages/contracts/src/market.js';
+import { MarketService } from './market/MarketService.js';
+import { createTransports } from './market/providers.js';
+import { registerMarketRoutes } from './market/routes.js';
 import './types.js';
 
 export interface BuildAppOptions {
   config: Config;
-  providers?: Readonly<Record<string, unknown>>;
+  providers?: Readonly<Record<string, MarketTransport>>;
   clock?: () => number;
 }
 
@@ -40,7 +44,8 @@ export async function buildApp({ config, providers = {}, clock = Date.now }: Bui
   const secrets = new SecretStore(config.secretKey);
   const events = new InvalidationHub(db, clock);
   let security: SecurityBoundary | undefined;
-  app.addHook('preClose', async () => events.close());
+  let market: MarketService | undefined;
+  app.addHook('preClose', async () => { market?.close(); events.close(); });
   app.addHook('onClose', async () => {
     security?.dispose();
     secrets.dispose();
@@ -48,10 +53,12 @@ export async function buildApp({ config, providers = {}, clock = Date.now }: Bui
   });
   try {
     security = await SecurityBoundary.create(config, db, clock);
+    const transports = Object.keys(providers).length ? providers : createTransports(clock);
+    market = new MarketService(db, transports, clock);
     app.decorate('db', db);
     app.decorate('security', security);
     app.decorate('events', events);
-    app.decorate('services', { config, clock, providers, secrets });
+    app.decorate('services', { config, clock, providers: transports, secrets, market });
     app.decorateRequest('principal', null);
     installErrorHandling(app);
     for (const schema of sharedSchemas) app.addSchema(schema);
@@ -61,7 +68,7 @@ export async function buildApp({ config, providers = {}, clock = Date.now }: Bui
         openapi: '3.1.0',
         info: {
           title: 'PineTerm API', version: packageInfo.version,
-          description: 'Single-user self-hosted workspace. Milestone 1 exposes session, scoped key management, readiness/source metadata and admin invalidations. No market/trading/agent functionality is claimed yet.',
+          description: 'Single-user self-hosted workspace. Administrator sessions, scoped keys, durable invalidations, fixed-venue crypto feeds, OHLCV streaming and historical CSV datasets. Trading and agent services are not yet implemented.',
           license: { name: 'AGPL-3.0-only', url: 'https://www.gnu.org/licenses/agpl-3.0.html' },
         },
         servers: [{ url: config.publicOrigin }],
@@ -88,6 +95,7 @@ export async function buildApp({ config, providers = {}, clock = Date.now }: Bui
       }
     });
     registerRoutes(app, config);
+    await registerMarketRoutes(app, market);
     const hasWebBuild = existsSync(join(config.webDistDir, 'index.html'));
     if (config.mode === 'production' && !hasWebBuild) {
       throw new Error('Production web assets are missing. Run npm run build before npm start.');

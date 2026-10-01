@@ -134,7 +134,7 @@ export function SecuritySettings({
     <Modal title="Security settings" titleId="security-title" onClose={onClose} closeDisabled={busy !== null}>
       <p>API keys grant only their selected scopes. Keep tokens outside source control and browser storage.</p>
       <p className="muted">Only the signed-in administrator can create or revoke keys. A key cannot manage security settings or create other keys.</p>
-      <p className="readiness-note">Milestone 1 implements key management. Market, script, trading and executor routes are not available yet; creating a key does not enable those features.</p>
+      <p className="readiness-note">Market data routes accept market:read keys. Script, trading and executor routes are not available yet; creating a scope does not enable those features.</p>
       {error && <p className="message error" role="alert">{error}</p>}
       {notice && <p className="message" role="status">{notice}</p>}
       {newToken && (

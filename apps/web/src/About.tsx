@@ -35,7 +35,7 @@ export function About({ client, onClose }: { client: ApiClient; onClose: () => v
   return (
     <Modal title="About PineTerm" titleId="about-title" onClose={onClose}>
       <p className="about-tagline">Your self-hosted charting and strategy workspace.</p>
-      <p>PineTerm is an original, single-user application. This milestone provides the application shell, administrator login and scoped API key management. Charts, market feeds, Pine execution, trading, alerts and agent analysis are not implemented yet.</p>
+      <p>PineTerm is an original, single-user application. Administrator sessions, scoped API keys, fixed-venue crypto data and historical CSV services are available. Chart UI, durable Pine execution, trading, alerts and agent analysis are not implemented yet.</p>
       <section aria-labelledby="source-title">
         <h3 id="source-title">License and source</h3>
         <p>Original PineTerm code is licensed <strong>AGPL-3.0-only</strong>. Corresponding source is available on <a href={revisionUrl} target="_blank" rel="noopener noreferrer">GitHub{metadata?.sourceRevision ? ' at the deployed revision' : ''}</a>.</p>

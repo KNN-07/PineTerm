@@ -8,7 +8,18 @@ An original, single-user crypto-first terminal built around [Vela](https://githu
 
 ## Readiness
 
-The current verified milestone provides administrator login, protected sessions, scoped API-key management, durable SQLite migrations, authenticated invalidation events, OpenAPI, production web serving, and a nonroot isolated PineTS process. Charts, market feeds, saved chart workspaces, script/backtest services, paper trading/replay, alerts, external execution and Pi UI are subsequent build milestones; they are **not available yet**. No market prices, portfolio gains, or model answers are seeded.
+Verified: administrator sessions and scoped API keys; transactional SQLite persistence; Binance Spot and Coinbase Exchange OHLCV, quotes and authenticated streaming; atomic historical CSV import/export; OpenAPI and production serving; a nonroot isolated PineTS process. Saved chart workspaces, script/backtest services, paper trading/replay, alerts, external execution and Pi UI are subsequent milestones and **not available yet**. The market services are currently exposed through the API, not chart UI. No prices, portfolio gains, or model answers are seeded.
+
+### Market data
+
+Venues stay distinct: `BINANCE:BTCUSDT` is USDT, `COINBASE:BTC-USD` is USD, and `CSV:<datasetId>` is imported historical data. No fallback from Binance `.com` to `.us` or between exchanges. Common intervals `1`, `5`, `15`, `60`, `D`; larger intervals include `3`, `30`, `45`, `120`, `240`, Monday-UTC weeks (`W`) and calendar months (`M`). Missing candles are gaps, never fabricated zero-volume rows.
+
+Authenticated routes: `/api/v1/providers`, `/markets?provider=&q=`, `/bars?provider=&symbol=&timeframe=&from=&to=&limit=`, `/quotes?provider=&symbol=`, `/bars.csv`, and WebSocket `/stream`. Bar opens are epoch milliseconds; ranges are half-open `[from,to)`. Pages contain newest `limit` bars ascending (default 500, maximum 5000); continue with exclusive `to=nextBefore`. Responses expose live/stale/historical state, observation time and gaps. A provider failure is an error or explicit stale cache with `providerError`, not successful empty live history.
+
+`POST /api/v1/datasets` accepts admin-session multipart: `name`, `baseCurrency`, `quoteCurrency`, `timeframe`, `tickSize`, `quantityStep`, and a CSV `file` (maximum 10 MiB). Exact header `time,open,high,low,close,volume`; UTC ISO-8601 `Z` or epoch milliseconds, not ambiguous seconds. Validation rejects duplicate timestamps, misalignment, invalid OHLC, nonfinite values or negative volume atomically. Imported feeds stay historical and cannot drive live execution. See OpenAPI for request/response schemas.
+
+`npm run smoke:core -- --scenario data` exercises reversed fixture import, exact bars/ranges/pages/export, atomic failures, reference-counted authoritative close streaming and explicit stale failures. `PINETERM_SMOKE_URL=http://127.0.0.1:3100 npm run smoke:providers` exercised real authenticated Binance and Coinbase candles, successive forming-bar updates and fresh quotes. Supply `PINETERM_SMOKE_TOKEN` or a local admin password securely in the environment; any temporary read key created by the smoke is revoked afterward.
+
 
 ## Install and run
 
@@ -75,13 +86,13 @@ npm run runner:build
 npm run smoke:core
 ```
 
-The core smoke starts real Fastify HTTP on an ephemeral port and a temporary database; exercises login, foreign Origin/CSRF rejection, scoped token creation/revocation, and logout; launches the pinned PineTS Docker process without network, writable root, capabilities, mounts or secrets. Behavior tests cover authorization escalation, schema rejection and exact decimal arithmetic. Browser login/settings/About/reload were exercised in development and production at desktop/mobile sizes. The runner executed a Pine v6 `plot(close)` script from supplied bars and returned the actual values 10 and 12. This is not yet end-to-end backtest acceptance.
+The core smoke starts real Fastify HTTP on an ephemeral port and a temporary database; exercises login, foreign Origin/CSRF rejection, scoped token creation/revocation and logout; launches the pinned PineTS Docker process without network, writable root, capabilities, mounts or secrets. Its data scenario exercises CSV import/export, exact ranges/pagination, confirmed WebSocket closure and explicit stale failure. Behavior tests cover authorization escalation, schema/import rejection, decimal arithmetic and shared subscriptions/cache deduplication. Browser login/settings/About/reload were exercised in development and production at desktop/mobile sizes. The runner executed a Pine v6 `plot(close)` script from supplied bars and returned actual values 10 and 12; this is not yet end-to-end backtest acceptance.
 
 ## Integrations and simulation limits
 
 Telegram bot/chat/user authorization, HTTPS webhook receiver, model/provider credentials, and an operator-supplied sandbox execution driver are not configured. Configure these through the application when their corresponding milestone is available; never submit secrets in issues or chat. No real-money order is part of verification.
 
-PineTS simulations are not TradingView-identical execution: upstream documents OCA sibling differences, approximate liquidation, absent FX conversion and numerical differences. Historical imports must remain historical. USD and USDT, and different exchange venues, are distinct markets. Future feed errors will be reported, not silently replaced by another venue.
+PineTS simulations are not TradingView-identical execution: upstream documents OCA sibling differences, approximate liquidation, absent FX conversion and numerical differences. Historical imports remain historical. USD and USDT, and different exchange venues, are distinct markets. Feed errors are reported, never silently replaced by another venue.
 
 ## License and attribution
 

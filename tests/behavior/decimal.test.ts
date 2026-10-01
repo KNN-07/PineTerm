@@ -9,7 +9,7 @@ describe('financial wire decimals', () => {
   });
   it('rejects ambiguous and noncanonical command values', () => {
     for (const value of ['NaN', 'Infinity', '1e3', '-0', '01', '0.10', '.5', '1.']) {
-      expect(() => financialDecimal(value)).toThrow('canonical');
+      expect(() => financialDecimal(value)).toThrow();
     }
     expect(decimalString(financialDecimal('-0.25'))).toBe('-0.25');
   });

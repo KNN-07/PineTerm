@@ -19,7 +19,8 @@
     "typecheck": "tsc -b --pretty false && tsc --noEmit -p apps/web/tsconfig.json",
     "test": "vitest run",
     "runner:build": "docker build -f apps/pine-runner/Dockerfile -t pineterm-pine-runner:local .",
-    "smoke:core": "node --import tsx scripts/smoke-core.ts"
+    "smoke:core": "node --import tsx scripts/smoke-core.ts",
+    "smoke:providers": "node --env-file-if-exists=.env --import tsx scripts/smoke-providers.ts"
   },
   "dependencies": {
     "@luxalgo/vela": "0.8.0",

@@ -6,9 +6,11 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { buildApp } from '../apps/server/src/app.js';
 import { loadConfig } from '../apps/server/src/config.js';
+import { FIXTURE_START, FixtureTransport } from '../tests/fixtures/market.js';
+import { runDataScenario } from './smoke/data.js';
 
-const scenario = process.argv[process.argv.indexOf('--scenario') + 1];
-if (process.argv.includes('--scenario') && scenario !== 'auth') throw new Error(`Scenario not implemented yet: ${scenario}`);
+const scenario = process.argv.includes('--scenario') ? process.argv[process.argv.indexOf('--scenario') + 1] : 'all';
+if (!['all', 'auth', 'data'].includes(scenario)) throw new Error(`Unknown smoke scenario: ${scenario}`);
 const runner = spawnSync('docker', ['run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '64', '--memory', '512m', '--cpus', '1', '--tmpfs', '/tmp:rw,noexec,nosuid,size=16m', 'pineterm-pine-runner:local', '--health'], { encoding: 'utf8', timeout: 15000 });
 assert.equal(runner.status, 0, runner.stderr || runner.error?.message);
 assert.equal(JSON.parse(runner.stdout).version, '0.10.0');
@@ -17,7 +19,11 @@ const dir = await mkdtemp(join(tmpdir(), 'pineterm-smoke-'));
 const password = randomBytes(24).toString('base64url');
 const origin = 'http://127.0.0.1:3000';
 const config = loadConfig({ ...process.env, PINETERM_ADMIN_PASSWORD: password, PINETERM_SESSION_SECRET: randomBytes(48).toString('base64'), PINETERM_SECRET_KEY: randomBytes(32).toString('base64'), PINETERM_DATA_DIR: dir, PINETERM_PUBLIC_ORIGIN: origin });
-const app = await buildApp({ config });
+let now = FIXTURE_START + 360000;
+const clock = () => now;
+const coinbase = new FixtureTransport('coinbase', clock);
+const binance = new FixtureTransport('binance', clock);
+const app = await buildApp({ config, providers: { coinbase, binance }, clock });
 try {
   const url = await app.listen({ host: '127.0.0.1', port: 0 });
   const request = (path: string, init: RequestInit = {}) => fetch(url + '/api/v1' + path, init);
@@ -41,6 +47,7 @@ try {
   assert.equal((await request('/api-keys', { headers: { Authorization: `Bearer ${key.token}` } })).status, 403);
   const { 'Content-Type': _contentType, ...deleteHeaders } = headers;
   assert.equal((await request('/api-keys/' + key.key.id, { method: 'DELETE', headers: deleteHeaders })).status, 204);
+  if (scenario === 'all' || scenario === 'data') await runDataScenario(url, headers, coinbase, value => { now = value; });
   assert.equal((await request('/session', { method: 'DELETE', headers: deleteHeaders })).status, 204);
   assert.equal((await request('/session', { headers: { Cookie: cookie } })).status, 401);
   console.log('auth: real HTTP login, Origin rejection, CSRF rejection, one-time scoped token, revocation, logout observed');

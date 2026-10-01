@@ -25,8 +25,8 @@ export function registerRoutes(app: FastifyInstance, config: Config): void {
     },
   }, async (): Promise<ApiMetadata> => ({
     name: 'PineTerm', version: packageInfo.version, sourceUrl: config.sourceUrl,
-    sourceRevision: config.sourceRevision, license: 'AGPL-3.0-only', milestone: 1,
-    capabilities: ['session', 'api-keys', 'about'],
+    sourceRevision: config.sourceRevision, license: 'AGPL-3.0-only', milestone: 2,
+    capabilities: ['session', 'api-keys', 'about', 'market-data', 'historical-datasets'],
   }));
 
   app.post<{ Body: LoginBody }>('/api/v1/session', {
