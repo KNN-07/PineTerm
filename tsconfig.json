@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "jsx": "react-jsx"
+  },
+  "include": [
+    "apps/server/src",
+    "apps/pine-runner/src",
+    "packages",
+    "scripts",
+    "tests",
+    "examples"
+  ],
+  "exclude": [
+    "node_modules",
+    "apps/web"
+  ]
+}

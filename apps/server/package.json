@@ -1,0 +1,5 @@
+{
+  "name": "@pineterm/server",
+  "private": true,
+  "type": "module"
+}

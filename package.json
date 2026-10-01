@@ -1,0 +1,57 @@
+{
+  "name": "pineterm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --import tsx scripts/dev.ts",
+    "build": "tsc -b && npm run build -w @pineterm/web",
+    "start": "node --env-file-if-exists=.env --import tsx apps/server/src/index.ts",
+    "typecheck": "tsc -b --pretty false && tsc --noEmit -p apps/web/tsconfig.json",
+    "test": "vitest run",
+    "runner:build": "docker build -f apps/pine-runner/Dockerfile -t pineterm-pine-runner:local .",
+    "smoke:core": "node --import tsx scripts/smoke-core.ts"
+  },
+  "dependencies": {
+    "@luxalgo/vela": "0.8.0",
+    "@luxalgo/vela-pinets": "0.2.14",
+    "pinets": "0.10.0",
+    "@earendil-works/pi-coding-agent": "0.99.2",
+    "@earendil-works/pi-ai": "0.99.2",
+    "fastify": "^5.0.0",
+    "@fastify/cookie": "^11.0.0",
+    "@fastify/static": "^9.0.0",
+    "@fastify/swagger": "^9.0.0",
+    "@fastify/websocket": "^11.0.0",
+    "@fastify/multipart": "^9.0.0",
+    "better-sqlite3": "^12.0.0",
+    "decimal.js": "^10.6.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@codemirror/view": "^6.0.0",
+    "@codemirror/state": "^6.0.0",
+    "codemirror": "^6.0.0",
+    "ws": "^8.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "tsx": "^4.0.0",
+    "vite": "^8.0.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "vitest": "^4.0.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/ws": "^8.0.0"
+  }
+}

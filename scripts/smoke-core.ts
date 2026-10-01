@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { buildApp } from '../apps/server/src/app.js';
+import { loadConfig } from '../apps/server/src/config.js';
+
+const scenario = process.argv[process.argv.indexOf('--scenario') + 1];
+if (process.argv.includes('--scenario') && scenario !== 'auth') throw new Error(`Scenario not implemented yet: ${scenario}`);
+const runner = spawnSync('docker', ['run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '64', '--memory', '512m', '--cpus', '1', '--tmpfs', '/tmp:rw,noexec,nosuid,size=16m', 'pineterm-pine-runner:local', '--health'], { encoding: 'utf8', timeout: 15000 });
+assert.equal(runner.status, 0, runner.stderr || runner.error?.message);
+assert.equal(JSON.parse(runner.stdout).version, '0.10.0');
+console.log('runner: pinned PineTS process launched in nonroot network-disabled, read-only Docker image');
+const dir = await mkdtemp(join(tmpdir(), 'pineterm-smoke-'));
+const password = randomBytes(24).toString('base64url');
+const origin = 'http://127.0.0.1:3000';
+const config = loadConfig({ ...process.env, PINETERM_ADMIN_PASSWORD: password, PINETERM_SESSION_SECRET: randomBytes(48).toString('base64'), PINETERM_SECRET_KEY: randomBytes(32).toString('base64'), PINETERM_DATA_DIR: dir, PINETERM_PUBLIC_ORIGIN: origin });
+const app = await buildApp({ config });
+try {
+  const url = await app.listen({ host: '127.0.0.1', port: 0 });
+  const request = (path: string, init: RequestInit = {}) => fetch(url + '/api/v1' + path, init);
+  assert.equal((await request('/api-keys')).status, 401);
+  assert.equal((await request('/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://evil.invalid' }, body: JSON.stringify({ password }) })).status, 403);
+  const login = await request('/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ password }) });
+  assert.equal(login.status, 200, await login.clone().text());
+  const cookie = login.headers.get('set-cookie')!.split(';')[0];
+  const session = await (await request('/session', { headers: { Cookie: cookie } })).json() as { authenticated: boolean; csrfToken: string };
+  assert.equal(session.authenticated, true);
+  assert.ok(session.csrfToken);
+  const headers = { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json', 'x-csrf-token': session.csrfToken };
+  assert.equal((await request('/api-keys', { method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'rejected', scopes: ['market:read'] }) })).status, 403);
+  const created = await request('/api-keys', { method: 'POST', headers, body: JSON.stringify({ name: 'smoke reader', scopes: ['market:read'] }) });
+  assert.equal(created.status, 201, await created.clone().text());
+  const key = await created.json() as { key: { id: string }; token: string };
+  assert.ok(key.token);
+  const list = await request('/api-keys', { headers: { Cookie: cookie } });
+  assert.equal(list.status, 200);
+  assert.ok(!(await list.text()).includes(key.token));
+  assert.equal((await request('/api-keys', { headers: { Authorization: `Bearer ${key.token}` } })).status, 403);
+  const { 'Content-Type': _contentType, ...deleteHeaders } = headers;
+  assert.equal((await request('/api-keys/' + key.key.id, { method: 'DELETE', headers: deleteHeaders })).status, 204);
+  assert.equal((await request('/session', { method: 'DELETE', headers: deleteHeaders })).status, 204);
+  assert.equal((await request('/session', { headers: { Cookie: cookie } })).status, 401);
+  console.log('auth: real HTTP login, Origin rejection, CSRF rejection, one-time scoped token, revocation, logout observed');
+} finally {
+  await app.close();
+  await rm(dir, { recursive: true, force: true });
+}
