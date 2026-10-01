@@ -2,13 +2,13 @@
 
 An original, single-user crypto-first terminal built around [Vela](https://github.com/LuxAlgo/Vela), [PineTS](https://github.com/LuxAlgo/PineTS), and [Pi](https://github.com/earendil-works/pi). No TradingView affiliation, copied branding, or full-parity claim.
 
-![Running PineTerm administrator workspace](design/screenshots/milestone-1-desktop.png)
+![Running PineTerm chart workspace](design/screenshots/pineterm-desktop.png)
 
-*Actual production application screenshot, milestone 1—not an image-generation concept or fabricated trading result.* [Mobile screenshot](design/screenshots/milestone-1-mobile.png).
+*Actual production application screenshot—not an image-generation concept or fabricated trading result.* [Mobile chart](design/screenshots/pineterm-mobile.png) · [mobile watchlist](design/screenshots/pineterm-mobile-watchlist.png).
 
 ## Readiness
 
-Verified: administrator sessions and scoped API keys; transactional SQLite persistence; Binance Spot and Coinbase Exchange OHLCV, quotes and authenticated streaming; atomic historical CSV import/export; OpenAPI and production serving; a nonroot isolated PineTS process. Saved chart workspaces, script/backtest services, paper trading/replay, alerts, external execution and Pi UI are subsequent milestones and **not available yet**. The market services are currently exposed through the API, not chart UI. No prices, portfolio gains, or model answers are seeded.
+Verified: administrator sessions and scoped API keys; transactional SQLite persistence; Binance/Coinbase OHLCV, quotes and streaming; historical CSV import/export; Vela chart layouts/drawings/settings; named saved workspaces and watchlists; OpenAPI and production serving; a nonroot isolated PineTS process. Durable script/backtest services, paper trading/replay, alerts, external execution and Pi UI are subsequent milestones and **not available yet**. No prices, portfolio gains, or model answers are seeded.
 
 ### Market data
 
@@ -20,6 +20,17 @@ Authenticated routes: `/api/v1/providers`, `/markets?provider=&q=`, `/bars?provi
 
 `npm run smoke:core -- --scenario data` exercises reversed fixture import, exact bars/ranges/pages/export, atomic failures, reference-counted authoritative close streaming and explicit stale failures. `PINETERM_SMOKE_URL=http://127.0.0.1:3100 npm run smoke:providers` exercised real authenticated Binance and Coinbase candles, successive forming-bar updates and fresh quotes. Supply `PINETERM_SMOKE_TOKEN` or a local admin password securely in the environment; any temporary read key created by the smoke is revoked afterward.
 
+### Chart workspace
+
+The original graphite/teal/rose React shell retains Vela’s chart chrome, drawing toolbar, object tree, undo/redo, scale/timezone settings and attribution. Choose `1`, `2h`, `2v`, `4` or `8` cells; linked crosshair, symbol, timeframe and viewport controls use Vela’s public workspace API. Styles include candles, OHLC bars, line, area, baseline and Heikin-Ashi. Synthetic display styles never replace raw backend candles for exports or future execution.
+
+**Manage workspace** creates, renames, copies and deletes named server-backed documents. Saves are serialized, debounced and revision-guarded; **Flush** captures current chart state. Network failures retain a local draft. A conflicting revision offers explicit Reload or Save as copy, never silent overwrite. Unsupported/corrupt saved state remains available through **Download original state**. Watchlists keep ordered provider-qualified instruments; select a row to change the active chart, and use the displayed observation timestamp/freshness rather than assuming an executable price.
+
+At tablet widths, right/bottom docks become exclusive keyboard-accessible drawers. At phone widths, one active chart fills the view while the saved multi-cell grid remains intact and returns on desktop. CSV export uses the backend’s half-open range rules. Vela PNG export includes chart/drawing raster but DOM overlays are best-effort and outer application docks are not included; product screenshots above capture the full browser.
+
+Browser verification exercised real venue switching, trend-line drawing/persistence, `1 → 4 → 1` and eight-cell layouts, Heikin-Ashi, watchlist reordering, CSV/PNG downloads, historical CSV upload, mobile drawers/Escape, saved reload, and a real revision conflict with explicit recovery. Development and built production surfaces were both exercised. `npm run smoke:core -- --scenario workspace` exercises actual HTTP persistence/CAS/ordering; behavior tests also prove restart preservation.
+
+**Image-reference prerequisite:** the request to enable `generate_image.enabled` timed out unanswered in the configuration approval flow; the setting remained `false`. No generated desktop/mobile reference images exist, and no SVG mockups were substituted. The implemented UI follows the approved textual layout/palette; the screenshots above are actual running-product images.
 
 ## Install and run
 

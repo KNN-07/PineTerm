@@ -18,6 +18,7 @@ import type { MarketTransport } from '../../../packages/contracts/src/market.js'
 import { MarketService } from './market/MarketService.js';
 import { createTransports } from './market/providers.js';
 import { registerMarketRoutes } from './market/routes.js';
+import { registerWorkspaceRoutes } from './workspaces/routes.js';
 import './types.js';
 
 export interface BuildAppOptions {
@@ -96,6 +97,7 @@ export async function buildApp({ config, providers = {}, clock = Date.now }: Bui
     });
     registerRoutes(app, config);
     await registerMarketRoutes(app, market);
+    await registerWorkspaceRoutes(app);
     const hasWebBuild = existsSync(join(config.webDistDir, 'index.html'));
     if (config.mode === 'production' && !hasWebBuild) {
       throw new Error('Production web assets are missing. Run npm run build before npm start.');

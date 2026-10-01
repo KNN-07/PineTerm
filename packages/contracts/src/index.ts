@@ -257,3 +257,6 @@ export const sharedSchemas = [
 export const errorResponses = Object.fromEntries(
   [400, 401, 403, 404, 409, 422, 429, 500, 503].map((status) => [status, { $ref: 'ErrorEnvelope#' }]),
 );
+
+export * from './market.js';
+export * from './workspace.js';

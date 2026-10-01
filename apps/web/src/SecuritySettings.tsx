@@ -54,7 +54,7 @@ export function SecuritySettings({
       })
       .catch((failure: unknown) => {
         if (controller.signal.aborted) return;
-        if (failure instanceof ApiError && failure.status === 401) onSessionExpired();
+        if (failure instanceof ApiError && (failure.status === 401 || failure.status === 403)) onSessionExpired();
         else setError(errorMessage(failure));
       })
       .finally(() => {
@@ -73,7 +73,7 @@ export function SecuritySettings({
   }, [newToken]);
 
   function handleError(failure: unknown) {
-    if (failure instanceof ApiError && failure.status === 401) onSessionExpired();
+    if (failure instanceof ApiError && (failure.status === 401 || failure.status === 403)) onSessionExpired();
     else setError(errorMessage(failure));
   }
 

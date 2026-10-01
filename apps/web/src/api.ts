@@ -36,12 +36,13 @@ function isErrorEnvelope(value: unknown): value is ErrorEnvelope {
 export class ApiClient {
   private csrfToken: string | null = null;
 
-  private async request<T>(
+  async request<T>(
     path: string,
-    options: { method?: 'GET' | 'POST' | 'DELETE'; body?: unknown; csrf?: boolean; signal?: AbortSignal } = {},
+    options: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown; csrf?: boolean; signal?: AbortSignal; responseType?: 'json' | 'blob' | 'response' } = {},
   ): Promise<T> {
-    const headers = new Headers({ Accept: 'application/json' });
-    if (options.body !== undefined) headers.set('Content-Type', 'application/json');
+    const headers = new Headers({ Accept: options.responseType === 'blob' ? '*/*' : 'application/json' });
+    const multipart = options.body instanceof FormData;
+    if (options.body !== undefined && !multipart) headers.set('Content-Type', 'application/json');
     if (options.csrf) {
       if (!this.csrfToken) throw new ApiError(401, 'SESSION_REQUIRED', 'Please sign in again.');
       headers.set('x-csrf-token', this.csrfToken);
@@ -54,7 +55,7 @@ export class ApiClient {
         credentials: 'same-origin',
         cache: 'no-store',
         headers,
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        body: options.body === undefined ? undefined : multipart ? options.body as FormData : JSON.stringify(options.body),
         signal: options.signal,
       });
     } catch (error) {
@@ -64,6 +65,8 @@ export class ApiClient {
 
     if (response.status === 401) this.csrfToken = null;
     if (response.status === 204 && response.ok) return undefined as T;
+    if (response.ok && options.responseType === 'response') return response as T;
+    if (response.ok && options.responseType === 'blob') return await response.blob() as T;
 
     let payload: unknown;
     try {

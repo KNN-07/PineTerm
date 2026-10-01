@@ -8,9 +8,10 @@ import { buildApp } from '../apps/server/src/app.js';
 import { loadConfig } from '../apps/server/src/config.js';
 import { FIXTURE_START, FixtureTransport } from '../tests/fixtures/market.js';
 import { runDataScenario } from './smoke/data.js';
+import { runWorkspaceScenario } from './smoke/workspace.js';
 
 const scenario = process.argv.includes('--scenario') ? process.argv[process.argv.indexOf('--scenario') + 1] : 'all';
-if (!['all', 'auth', 'data'].includes(scenario)) throw new Error(`Unknown smoke scenario: ${scenario}`);
+if (!['all', 'auth', 'data', 'workspace'].includes(scenario)) throw new Error(`Unknown smoke scenario: ${scenario}`);
 const runner = spawnSync('docker', ['run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '64', '--memory', '512m', '--cpus', '1', '--tmpfs', '/tmp:rw,noexec,nosuid,size=16m', 'pineterm-pine-runner:local', '--health'], { encoding: 'utf8', timeout: 15000 });
 assert.equal(runner.status, 0, runner.stderr || runner.error?.message);
 assert.equal(JSON.parse(runner.stdout).version, '0.10.0');
@@ -48,6 +49,7 @@ try {
   const { 'Content-Type': _contentType, ...deleteHeaders } = headers;
   assert.equal((await request('/api-keys/' + key.key.id, { method: 'DELETE', headers: deleteHeaders })).status, 204);
   if (scenario === 'all' || scenario === 'data') await runDataScenario(url, headers, coinbase, value => { now = value; });
+  if (scenario === 'all' || scenario === 'workspace') await runWorkspaceScenario(url, headers);
   assert.equal((await request('/session', { method: 'DELETE', headers: deleteHeaders })).status, 204);
   assert.equal((await request('/session', { headers: { Cookie: cookie } })).status, 401);
   console.log('auth: real HTTP login, Origin rejection, CSRF rejection, one-time scoped token, revocation, logout observed');

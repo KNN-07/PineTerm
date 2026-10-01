@@ -3,17 +3,19 @@ import type { FormEvent } from 'react';
 import { About, SOURCE_URL } from './About.js';
 import { ApiClient, ApiError, errorMessage } from './api.js';
 import { SecuritySettings } from './SecuritySettings.js';
+import { Terminal } from './features/workspace/Terminal.js';
 
 type SessionState = 'checking' | 'signed-out' | 'signed-in' | 'unavailable';
 
 export function App() {
   const [client] = useState(() => new ApiClient());
   const [sessionState, setSessionState] = useState<SessionState>('checking');
+  const [connection, setConnection] = useState('Feed connecting');
   const [checkVersion, setCheckVersion] = useState(0);
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [panel, setPanel] = useState<'security' | 'about' | null>(null);
+  const [panel, setPanel] = useState<'data' | 'security' | 'about' | null>(null);
   const loginInput = useRef<HTMLInputElement>(null);
   const settingsButton = useRef<HTMLButtonElement>(null);
   const aboutButton = useRef<HTMLButtonElement>(null);
@@ -73,7 +75,7 @@ export function App() {
       setPassword('');
       setSessionState('signed-out');
     } catch (failure) {
-      if (failure instanceof ApiError && failure.status === 401) onSessionExpired();
+      if (failure instanceof ApiError && (failure.status === 401 || failure.status === 403)) onSessionExpired();
       else setError(errorMessage(failure));
     } finally {
       setBusy(false);
@@ -83,27 +85,28 @@ export function App() {
   function closePanel() {
     const previous = panel;
     setPanel(null);
-    if (previous === 'security') settingsButton.current?.focus();
+    if (previous === 'security' || previous === 'data') settingsButton.current?.focus();
     else aboutButton.current?.focus();
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${sessionState === 'signed-in' ? 'signed-in-shell' : ''}`}>
       <a className="skip-link" href="#main-content">Skip to content</a>
       <header className="app-header">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">P</span>
           <strong>PineTerm</strong>
-          <span className="milestone-label">Milestone 2</span>
+          <span className="milestone-label" role="status">{sessionState === 'signed-in' ? connection : 'Self-hosted terminal'}</span>
         </div>
         <nav aria-label="Application">
-          {sessionState === 'signed-in' && <button type="button" ref={settingsButton} onClick={() => setPanel('security')}>Settings</button>}
+          {sessionState === 'signed-in' && <button type="button" ref={settingsButton} onClick={() => setPanel('data')}>Settings</button>}
           <button type="button" ref={aboutButton} onClick={() => setPanel('about')}>About</button>
           <a href={SOURCE_URL} target="_blank" rel="noopener noreferrer">Source</a>
           {sessionState === 'signed-in' && <button type="button" onClick={() => void logout()} disabled={busy}>{busy ? 'Signing out…' : 'Sign out'}</button>}
         </nav>
       </header>
-      <main id="main-content" tabIndex={-1}>
+      {sessionState === 'signed-in' && error && <div className="terminal-notice error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}>Dismiss</button></div>}
+      <main id="main-content" tabIndex={-1} className={sessionState === 'signed-in' ? 'terminal-main' : ''}>
         {sessionState === 'checking' && (
           <section className="login-card" aria-busy="true"><h1>PineTerm</h1><p role="status">Checking your administrator session…</p></section>
         )}
@@ -131,41 +134,12 @@ export function App() {
             </form>
           </section>
         )}
-        {sessionState === 'signed-in' && (
-          <div className="workspace-foundation">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">Administrator workspace</p>
-                <h1>Your PineTerm foundation is ready</h1>
-              </div>
-              <span className="status">Signed in</span>
-            </div>
-            {error && <p className="message error" role="alert">{error}</p>}
-            <section className="foundation-panel" aria-labelledby="readiness-title">
-              <h2 id="readiness-title">A running shell, not a simulated terminal</h2>
-              <p>Administrator sessions, scoped API keys and authoritative Binance/Coinbase market services are available. Historical CSV import/export is supported by the API. Chart UI is the next milestone; no live execution is enabled.</p>
-              <button type="button" className="primary" onClick={() => setPanel('security')}>Manage API keys</button>
-            </section>
-            <section aria-labelledby="capabilities-title">
-              <h2 id="capabilities-title">Capability readiness</h2>
-              <dl className="readiness-list">
-                <div><dt>Login and security settings</dt><dd><span className="status">Available now</span> · single administrator, session protection and scoped keys</dd></div>
-                <div><dt>Real market data</dt><dd><span className="status">Available via API</span> · Binance Spot, Coinbase Exchange, confirmed-bar streams and historical CSV datasets</dd></div>
-                <div><dt>Charts and workspaces</dt><dd>Not implemented · Vela charts, drawings and saved layouts are planned for milestone 3</dd></div>
-                <div><dt>Pine and strategy testing</dt><dd>Not implemented · PineTS indicators and isolated backtests are planned for milestone 4</dd></div>
-                <div><dt>Paper trading and replay</dt><dd>Not implemented · server-authoritative paper accounts are planned for milestone 5</dd></div>
-                <div><dt>Alerts and notifications</dt><dd>Not implemented · durable webhooks and Telegram are planned for milestone 6</dd></div>
-                <div><dt>External executor handoff</dt><dd>Not implemented · opt-in, scoped execution protocol is planned for milestone 7</dd></div>
-                <div><dt>Pi analysis and Pine authoring</dt><dd>Not implemented · restricted analysis tools are planned for milestone 8</dd></div>
-              </dl>
-            </section>
-          </div>
-        )}
+        {sessionState === 'signed-in' && <Terminal client={client} onSessionExpired={onSessionExpired} onConnection={setConnection} settingsOpen={panel === 'data'} onCloseSettings={closePanel} onOpenSecurity={() => setPanel('security')} />}
       </main>
       <footer className="app-footer">
         <span>PineTerm · AGPL-3.0-only</span>
-        <span>Chart technology: <a href="https://velacharts.dev" target="_blank" rel="noopener noreferrer">Vela by LuxAlgo</a> · not yet mounted</span>
-        <span>Market API available · trading disabled</span>
+        <span>Charts by <a href="https://velacharts.dev" target="_blank" rel="noopener noreferrer">Vela by LuxAlgo</a></span>
+        <span>Venue-qualified data · live handoff disabled</span>
       </footer>
       {panel === 'security' && sessionState === 'signed-in' && <SecuritySettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} />}
       {panel === 'about' && <About client={client} onClose={closePanel} />}
