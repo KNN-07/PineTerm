@@ -19,6 +19,8 @@ export async function runPaperScenario(url: string, headers: Record<string, stri
     const value: Quote = { market, price, observedAt: fixture.clock() - (stale ? 31000 : 0), status: stale ? 'stale' : 'live', changePercent: null };
     fixture.emit('1', { kind: 'quote', quote: value });
   };
+  // Earlier smoke scenarios may advance the shared clock; establish a fresh reference before acceptance.
+  quote('10');
   const buyBody = { accountId, market, side: 'buy', type: 'market', quantity: '2' };
   const buy = await fetch(url + '/api/v1/paper/orders', { method: 'POST', headers: { ...headers, 'Idempotency-Key': 'paper-buy-two' }, body: JSON.stringify(buyBody) });
   assert.equal(buy.status, 201, await buy.clone().text());

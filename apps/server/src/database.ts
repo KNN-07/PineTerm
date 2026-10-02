@@ -484,6 +484,15 @@ const migrations: readonly Migration[] = [
       CREATE INDEX paper_ledger_account ON paper_ledger(account_id, occurred_at, id);
     `,
   },
+  {
+    version: 6,
+    name: 'durable_alert_archive',
+    sql: `
+      ALTER TABLE alerts ADD COLUMN archived_at INTEGER;
+      CREATE INDEX alerts_active ON alerts(enabled, archived_at);
+      CREATE INDEX alert_events_history ON alert_events(alert_id, created_at, id);
+    `,
+  },
 ];
 
 export function openDatabase(dataDir: string, clock: () => number): AppDatabase {

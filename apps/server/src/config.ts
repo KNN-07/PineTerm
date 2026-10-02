@@ -13,6 +13,7 @@ export interface Config {
   webDistDir: string;
   sourceRevision: string | null;
   sourceUrl: string;
+  webhookLocalHosts: string[];
 }
 
 export class ConfigurationError extends Error {
@@ -69,6 +70,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new ConfigurationError('PINETERM_DATA_DIR must be a nonempty directory path.');
   }
   const mode = env.NODE_ENV === 'production' ? 'production' : 'development';
+  const webhookLocalHosts = (env.PINETERM_DEV_WEBHOOK_HOSTS ?? '').split(',').map(host => host.trim()).filter(Boolean);
+  if (webhookLocalHosts.some(host => !/^(?:[A-Za-z0-9-]+\.)*[A-Za-z0-9-]+$/.test(host)) || (mode === 'production' && webhookLocalHosts.length)) {
+    throw new ConfigurationError('PINETERM_DEV_WEBHOOK_HOSTS accepts exact development-only hostnames/IPs, never wildcards, URLs or production exceptions.');
+  }
   return {
     adminPassword,
     sessionSecret,
@@ -80,6 +85,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     mode,
     webDistDir: fileURLToPath(new URL('../../web/dist/', import.meta.url)),
     sourceRevision,
+    webhookLocalHosts,
     sourceUrl: sourceRevision
       ? `https://github.com/KNN-07/PineTerm/tree/${sourceRevision}`
       : 'https://github.com/KNN-07/PineTerm',

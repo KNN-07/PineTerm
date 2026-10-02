@@ -8,6 +8,8 @@ import type { PineService } from './pine/PineService.js';
 import type { ScriptService } from './scripts/ScriptService.js';
 import type { PaperService } from './paper/PaperService.js';
 import type { ReplayService } from './replay/ReplayService.js';
+import type { AlertService } from './alerts/AlertService.js';
+import type { NotificationService } from './notifications/NotificationService.js';
 
 export interface ServerServices {
   config: Config;
@@ -19,6 +21,8 @@ export interface ServerServices {
   scripts: ScriptService;
   paper: PaperService;
   replay: ReplayService;
+  alerts: AlertService;
+  notifications: NotificationService;
 }
 
 declare module 'fastify' {

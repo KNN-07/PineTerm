@@ -1,0 +1,48 @@
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { emptyQuerySchema, errorResponses, idParamsSchema, mutationHeadersSchema, type CreateWebhook, type UpdateTelegram, type UpdateWebhook } from '@pineterm/contracts';
+import { ApiError } from '../errors.js';
+import type { NotificationService } from './NotificationService.js';
+import '../types.js';
+
+const uuid = { type: 'string', format: 'uuid' } as const;
+const timestamp = { type: 'integer', minimum: 0 } as const;
+const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] } as const;
+const nullableStatus = { anyOf: [{ type: 'integer', minimum: 100, maximum: 599 }, { type: 'null' }] } as const;
+const name = { type: 'string', minLength: 1, maxLength: 100 } as const;
+const url = { type: 'string', minLength: 1, maxLength: 2048, description: 'HTTPS, no credentials/fragments. DNS must resolve exclusively to public addresses. Exact development-only hosts are the only local/HTTP exception.' } as const;
+const secret = { type: 'string', minLength: 16, maxLength: 4096, writeOnly: true, description: '16–4096 UTF-8 bytes. AES-GCM encrypted at rest; never returned.' } as const;
+const revision = { type: 'integer', minimum: 1 } as const;
+const webhookSchema = { type: 'object', additionalProperties: false, required: ['id', 'name', 'url', 'revision', 'secretConfigured', 'createdAt', 'updatedAt'], properties: { id: uuid, name, url, revision, secretConfigured: { type: 'boolean' }, createdAt: timestamp, updatedAt: timestamp } } as const;
+const webhookWrapper = { type: 'object', additionalProperties: false, required: ['webhook'], properties: { webhook: webhookSchema } } as const;
+const createWebhookSchema = { type: 'object', additionalProperties: false, required: ['name', 'url', 'secret'], properties: { name, url, secret } } as const;
+const updateWebhookSchema = { type: 'object', additionalProperties: false, required: ['revision', 'name', 'url'], properties: { revision, name, url, secret } } as const;
+const chats = { type: 'array', minItems: 1, maxItems: 100, uniqueItems: true, items: { type: 'string', pattern: '^-?[1-9]\\d{0,19}$' } } as const;
+const users = { type: 'array', minItems: 1, maxItems: 100, uniqueItems: true, items: { type: 'string', pattern: '^[1-9]\\d{0,19}$' } } as const;
+const lastCommand = { type: 'object', additionalProperties: false, required: ['name', 'updateId', 'observedAt'], properties: { name: { type: 'string', enum: ['/status', '/alerts', '/positions', '/pause_alerts'] }, updateId: timestamp, observedAt: timestamp } } as const;
+const telegramSchema = { type: 'object', additionalProperties: false, required: ['configured', 'revision', 'allowedChatIds', 'allowedUserIds', 'enabled', 'status', 'reason', 'botUsername', 'updateOffset'], properties: { configured: { type: 'boolean' }, revision: { type: 'integer', minimum: 0 }, allowedChatIds: { ...chats, minItems: 0 }, allowedUserIds: { ...users, minItems: 0 }, enabled: { type: 'boolean' }, status: { type: 'string', enum: ['unconfigured', 'checking', 'connected', 'unavailable', 'webhook-conflict'] }, reason: nullableString, botUsername: nullableString, updateOffset: timestamp, lastCommand } } as const;
+const telegramCommand = { type: 'object', additionalProperties: false, required: ['revision', 'allowedChatIds', 'allowedUserIds', 'enabled'], properties: { revision: { type: 'integer', minimum: 0 }, token: { type: 'string', pattern: '^\\d{1,20}:[A-Za-z0-9_-]{20,200}$', writeOnly: true }, allowedChatIds: chats, allowedUserIds: users, enabled: { type: 'boolean' } } } as const;
+const testResult = { type: 'object', additionalProperties: false, required: ['delivered', 'status', 'message', 'eventId', 'observedAt'], properties: { delivered: { type: 'boolean' }, status: nullableStatus, message: { type: 'string' }, eventId: uuid, observedAt: timestamp } } as const;
+const notificationsSchema = { type: 'object', additionalProperties: false, required: ['paused', 'telegram'], properties: { paused: { type: 'boolean' }, telegram: telegramSchema } } as const;
+async function rejectBody(request: FastifyRequest): Promise<void> { if (request.body !== undefined) throw new ApiError(400, 'INVALID_SCHEMA', 'This operation does not accept a request body.'); }
+
+export async function registerNotificationRoutes(app: FastifyInstance, notifications: NotificationService): Promise<void> {
+  await app.register(async routes => {
+    const config = { security: { access: 'admin' as const } };
+    const readSecurity = [{ adminSession: [] }];
+    const mutationSecurity = [{ adminSession: [], csrfToken: [] }];
+    const read = { config, preValidation: rejectBody };
+    const mutations = { config };
+    routes.get('/api/v1/webhooks', { ...read, schema: { operationId: 'listWebhooks', tags: ['Notifications'], security: readSecurity, querystring: emptyQuerySchema, response: { 200: { type: 'object', additionalProperties: false, required: ['webhooks'], properties: { webhooks: { type: 'array', items: webhookSchema } } }, ...errorResponses } } }, async () => ({ webhooks: notifications.listWebhooks() }));
+    routes.post<{ Body: CreateWebhook }>('/api/v1/webhooks', { ...mutations, schema: { operationId: 'createWebhook', tags: ['Notifications'], security: mutationSecurity, headers: mutationHeadersSchema, querystring: emptyQuerySchema, body: createWebhookSchema, response: { 201: webhookWrapper, ...errorResponses } } }, async (request, reply) => reply.code(201).send({ webhook: await notifications.createWebhook(request.body) }));
+    routes.get<{ Params: { id: string } }>('/api/v1/webhooks/:id', { ...read, schema: { operationId: 'getWebhook', tags: ['Notifications'], security: readSecurity, params: idParamsSchema, querystring: emptyQuerySchema, response: { 200: webhookWrapper, ...errorResponses } } }, async request => ({ webhook: notifications.getWebhook(request.params.id) }));
+    routes.put<{ Params: { id: string }; Body: UpdateWebhook }>('/api/v1/webhooks/:id', { ...mutations, schema: { operationId: 'updateWebhook', tags: ['Notifications'], security: mutationSecurity, headers: mutationHeadersSchema, params: idParamsSchema, querystring: emptyQuerySchema, body: updateWebhookSchema, response: { 200: webhookWrapper, ...errorResponses } } }, async request => ({ webhook: await notifications.updateWebhook(request.params.id, request.body) }));
+    routes.delete<{ Params: { id: string } }>('/api/v1/webhooks/:id', { ...read, schema: { operationId: 'deleteWebhook', tags: ['Notifications'], security: mutationSecurity, headers: mutationHeadersSchema, params: idParamsSchema, querystring: emptyQuerySchema, response: { 204: { type: 'null' }, ...errorResponses } } }, async (request, reply) => { notifications.deleteWebhook(request.params.id); return reply.code(204).send(); });
+    routes.post<{ Params: { id: string } }>('/api/v1/webhooks/:id/test', { ...read, schema: { operationId: 'testWebhook', tags: ['Notifications'], description: 'Explicit labelled test. A successful HTTP response is not receiver-side signature attestation.', security: mutationSecurity, headers: mutationHeadersSchema, params: idParamsSchema, querystring: emptyQuerySchema, response: { 200: testResult, ...errorResponses } } }, async request => notifications.testWebhook(request.params.id));
+    routes.get('/api/v1/integrations/telegram', { ...read, schema: { operationId: 'getTelegram', tags: ['Notifications'], security: readSecurity, querystring: emptyQuerySchema, response: { 200: telegramSchema, ...errorResponses } } }, async () => notifications.getTelegram());
+    routes.put<{ Body: UpdateTelegram }>('/api/v1/integrations/telegram', { ...mutations, schema: { operationId: 'updateTelegram', tags: ['Notifications'], security: mutationSecurity, headers: mutationHeadersSchema, querystring: emptyQuerySchema, body: telegramCommand, response: { 200: telegramSchema, ...errorResponses } } }, async request => notifications.updateTelegram(request.body));
+    routes.delete('/api/v1/integrations/telegram', { ...read, schema: { operationId: 'deleteTelegram', tags: ['Notifications'], security: mutationSecurity, headers: mutationHeadersSchema, querystring: emptyQuerySchema, response: { 204: { type: 'null' }, ...errorResponses } } }, async (_request, reply) => { notifications.deleteTelegram(); return reply.code(204).send(); });
+    routes.post('/api/v1/integrations/telegram/test', { ...read, schema: { operationId: 'testTelegram', tags: ['Notifications'], description: 'getMe and getWebhookInfo followed by a plain-text labelled test to the first configured allowed chat. Existing webhooks are never deleted.', security: mutationSecurity, headers: mutationHeadersSchema, querystring: emptyQuerySchema, response: { 200: testResult, ...errorResponses } } }, async () => notifications.testTelegram());
+    routes.get('/api/v1/integrations/notifications', { ...read, schema: { operationId: 'getNotificationPolicy', tags: ['Notifications'], security: readSecurity, querystring: emptyQuerySchema, response: { 200: notificationsSchema, ...errorResponses } } }, async () => notifications.getStatus());
+    routes.put<{ Body: { paused: boolean } }>('/api/v1/integrations/notifications', { ...mutations, schema: { operationId: 'setNotificationPolicy', tags: ['Notifications'], description: 'Pause outbox delivery only; alert evaluation, execution and explicit administrator tests remain unchanged.', security: mutationSecurity, headers: mutationHeadersSchema, querystring: emptyQuerySchema, body: { type: 'object', additionalProperties: false, required: ['paused'], properties: { paused: { type: 'boolean' } } }, response: { 200: notificationsSchema, ...errorResponses } } }, async request => notifications.setNotificationsPaused(request.body.paused));
+  });
+}

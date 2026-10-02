@@ -4,6 +4,7 @@ import { API_KEY_SCOPES } from '@pineterm/contracts';
 import type { ApiKey, ApiKeyScope, CreateApiKeyBody } from '@pineterm/contracts';
 import { ApiClient, ApiError, errorMessage } from './api.js';
 import { Modal } from './Modal.js';
+import { SettingsNavigation } from './features/alerts/SettingsNavigation.js';
 
 const scopeDescriptions: Record<ApiKeyScope, string> = {
   'market:read': 'Read market data',
@@ -24,10 +25,14 @@ export function SecuritySettings({
   client,
   onClose,
   onSessionExpired,
+  onOpenData,
+  onOpenNotifications,
 }: {
   client: ApiClient;
   onClose: () => void;
   onSessionExpired: () => void;
+  onOpenData: () => void;
+  onOpenNotifications: () => void;
 }) {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
@@ -132,9 +137,10 @@ export function SecuritySettings({
 
   return (
     <Modal title="Security settings" titleId="security-title" onClose={onClose} closeDisabled={busy !== null}>
+      <SettingsNavigation active="security" onData={onOpenData} onSecurity={() => {}} onNotifications={onOpenNotifications} disabled={busy !== null} />
       <p>API keys grant only their selected scopes. Keep tokens outside source control and browser storage.</p>
       <p className="muted">Only the signed-in administrator can create or revoke keys. A key cannot manage security settings or create other keys.</p>
-      <p className="readiness-note">Market data routes accept market:read keys. Script, trading and executor routes are not available yet; creating a scope does not enable those features.</p>
+      <p className="readiness-note">Market, saved-script, backtest, and live-paper routes accept their corresponding scopes. Alerts and notification configuration require an administrator session. Executor / live handoff services are not available yet; creating a scope does not enable them.</p>
       {error && <p className="message error" role="alert">{error}</p>}
       {notice && <p className="message" role="status">{notice}</p>}
       {newToken && (

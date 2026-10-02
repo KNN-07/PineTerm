@@ -27,15 +27,20 @@ import { PaperService } from './paper/PaperService.js';
 import { registerPaperRoutes } from './paper/routes.js';
 import { ReplayService } from './replay/ReplayService.js';
 import { registerReplayRoutes } from './replay/routes.js';
+import { AlertService } from './alerts/AlertService.js';
+import { registerAlertRoutes } from './alerts/routes.js';
+import { NotificationService, type NotificationOptions } from './notifications/NotificationService.js';
+import { registerNotificationRoutes } from './notifications/routes.js';
 import './types.js';
 
 export interface BuildAppOptions {
   config: Config;
   providers?: Readonly<Record<string, MarketTransport>>;
   clock?: () => number;
+  notifications?: NotificationOptions;
 }
 
-export async function buildApp({ config, providers = {}, clock = Date.now }: BuildAppOptions): Promise<FastifyInstance> {
+export async function buildApp({ config, providers = {}, clock = Date.now, notifications: notificationOptions }: BuildAppOptions): Promise<FastifyInstance> {
   const app = fastify({
     logger: {
       level: 'info',
@@ -57,7 +62,9 @@ export async function buildApp({ config, providers = {}, clock = Date.now }: Bui
   let pine: PineService | undefined;
   let paper: PaperService | undefined;
   let replay: ReplayService | undefined;
-  app.addHook('preClose', async () => { await replay?.close(); await paper?.close(); await pine?.close(); market?.close(); events.close(); });
+  let notifications: NotificationService | undefined;
+  let alerts: AlertService | undefined;
+  app.addHook('preClose', async () => { await alerts?.close(); await notifications?.close(); await replay?.close(); await paper?.close(); await pine?.close(); market?.close(); events.close(); });
   app.addHook('onClose', async () => {
     security?.dispose();
     secrets.dispose();
@@ -74,10 +81,21 @@ export async function buildApp({ config, providers = {}, clock = Date.now }: Bui
     await paper.initialise();
     replay = new ReplayService(db, market, paper, clock, events);
     await replay.initialise();
+    notifications = new NotificationService(db, secrets, config, clock, events, notificationOptions);
+    alerts = new AlertService(db, market, pine, scripts, notifications, clock, events);
+    await notifications.initialise({
+      status: () => `PineTerm server · ${new Date(clock()).toISOString()} · paper simulation · no direct exchange execution`,
+      alerts: () => alerts!.list().map(alert => `${alert.name}: ${alert.enabled ? 'armed' : 'paused'} · ${alert.market.provider.toUpperCase()}:${alert.market.symbol} · ${alert.timeframe}${alert.pausedReason ? ` · ${alert.pausedReason}` : ''}`).join('\n') || 'No alerts configured.',
+      positions: async () => {
+        const portfolios = await Promise.all(paper!.listAccounts('live').filter(account => !account.archivedAt).map(account => paper!.getAccount(account.id)));
+        return portfolios.map(view => `${view.account.name} · PAPER · cash ${view.account.cashBalance} ${view.account.quoteCurrency}\n${view.positions.map(position => `${position.market.provider.toUpperCase()}:${position.market.symbol} · owned ${position.quantity}`).join('\n')}`).join('\n\n') || 'No live paper accounts.';
+      },
+    });
+    await alerts.initialise();
     app.decorate('db', db);
     app.decorate('security', security);
     app.decorate('events', events);
-    app.decorate('services', { config, clock, providers: transports, secrets, market, pine, scripts, paper, replay });
+    app.decorate('services', { config, clock, providers: transports, secrets, market, pine, scripts, paper, replay, alerts, notifications });
     app.decorateRequest('principal', null);
     installErrorHandling(app);
     for (const schema of sharedSchemas) app.addSchema(schema);
@@ -87,7 +105,7 @@ export async function buildApp({ config, providers = {}, clock = Date.now }: Bui
         openapi: '3.1.0',
         info: {
           title: 'PineTerm API', version: packageInfo.version,
-          description: 'Single-user self-hosted workspace. Administrator sessions, scoped keys, durable invalidations, fixed-venue crypto feeds, OHLCV streaming and historical CSV datasets. Trading and agent services are not yet implemented.',
+          description: 'Single-user self-hosted workspace. Scoped finance routes, venue-qualified market data, immutable Pine scripts, isolated simulation, server paper accounts/replay and durable alerts/notification delivery. No direct funded exchange execution.',
           license: { name: 'AGPL-3.0-only', url: 'https://www.gnu.org/licenses/agpl-3.0.html' },
         },
         servers: [{ url: config.publicOrigin }],
@@ -121,6 +139,8 @@ export async function buildApp({ config, providers = {}, clock = Date.now }: Bui
     await registerScriptRoutes(app);
     await registerPaperRoutes(app);
     await registerReplayRoutes(app, replay);
+    await registerAlertRoutes(app, alerts);
+    await registerNotificationRoutes(app, notifications);
     const hasWebBuild = existsSync(join(config.webDistDir, 'index.html'));
     if (config.mode === 'production' && !hasWebBuild) {
       throw new Error('Production web assets are missing. Run npm run build before npm start.');

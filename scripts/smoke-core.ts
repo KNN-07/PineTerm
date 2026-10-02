@@ -13,9 +13,10 @@ import { runWorkspaceScenario } from './smoke/workspace.js';
 import { runPineScenario } from './smoke/pine.js';
 import { runPaperScenario } from './smoke/paper.js';
 import { runReplayScenario } from './smoke/replay.js';
+import { runAlertsScenario } from './smoke/alerts.js';
 
 const scenario = process.argv.includes('--scenario') ? process.argv[process.argv.indexOf('--scenario') + 1] : 'all';
-if (!['all', 'auth', 'data', 'workspace', 'pine', 'paper', 'replay'].includes(scenario)) throw new Error(`Unknown smoke scenario: ${scenario}`);
+if (!['all', 'auth', 'data', 'workspace', 'pine', 'paper', 'replay', 'alerts'].includes(scenario)) throw new Error(`Unknown smoke scenario: ${scenario}`);
 const runner = spawnSync('docker', ['run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '64', '--memory', '512m', '--cpus', '1', '--tmpfs', '/tmp:rw,noexec,nosuid,size=16m', 'pineterm-pine-runner:local', '--health'], { encoding: 'utf8', timeout: 15000 });
 assert.equal(runner.status, 0, runner.stderr || runner.error?.message);
 assert.equal(JSON.parse(runner.stdout).version, '0.10.0');
@@ -23,7 +24,7 @@ console.log('runner: pinned PineTS process launched in nonroot network-disabled,
 const dir = await mkdtemp(join(tmpdir(), 'pineterm-smoke-'));
 const password = randomBytes(24).toString('base64url');
 const origin = 'http://127.0.0.1:3000';
-const config = loadConfig({ ...process.env, PINETERM_ADMIN_PASSWORD: password, PINETERM_SESSION_SECRET: randomBytes(48).toString('base64'), PINETERM_SECRET_KEY: randomBytes(32).toString('base64'), PINETERM_DATA_DIR: dir, PINETERM_PUBLIC_ORIGIN: origin });
+const config = loadConfig({ ...process.env, NODE_ENV: 'development', PINETERM_DEV_WEBHOOK_HOSTS: scenario === 'all' || scenario === 'alerts' ? '127.0.0.1' : '', PINETERM_ADMIN_PASSWORD: password, PINETERM_SESSION_SECRET: randomBytes(48).toString('base64'), PINETERM_SECRET_KEY: randomBytes(32).toString('base64'), PINETERM_DATA_DIR: dir, PINETERM_PUBLIC_ORIGIN: origin });
 let now = FIXTURE_START + 360000;
 const clock = () => now;
 const coinbase = new FixtureTransport('coinbase', clock);
@@ -62,6 +63,12 @@ try {
     await app.listen({ host: '127.0.0.1', port });
   });
   if (scenario === 'all' || scenario === 'replay') await runReplayScenario(url, headers);
+  if (scenario === 'all' || scenario === 'alerts') await runAlertsScenario(url, headers, coinbase, value => { now = value; }, async () => {
+    const port = (app.server.address() as AddressInfo).port;
+    await app.close();
+    app = await buildApp({ config, providers: { coinbase, binance }, clock });
+    await app.listen({ host: '127.0.0.1', port });
+  }, async () => { await app.services.alerts.idle(); await app.services.notifications.idle(); });
   assert.equal((await request('/session', { method: 'DELETE', headers: deleteHeaders })).status, 204);
   assert.equal((await request('/session', { headers: { Cookie: cookie } })).status, 401);
   console.log('auth: real HTTP login, Origin rejection, CSRF rejection, one-time scoped token, revocation, logout observed');

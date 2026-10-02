@@ -4,10 +4,11 @@ import type { Dataset, MarketRef, ProviderId } from '@pineterm/contracts';
 import { TIMEFRAMES } from '@pineterm/contracts';
 import { ApiClient, ApiError, errorMessage } from '../../api.js';
 import { Modal } from '../../Modal.js';
+import { SettingsNavigation } from '../alerts/SettingsNavigation.js';
 
 interface ProviderStatus { id: ProviderId; name: string; status: string; timeframes: string[] }
-export function DataSettings({ client, onClose, onOpenSecurity, onSessionError, onDatasetImported }: {
-  client: ApiClient; onClose: () => void; onOpenSecurity: () => void; onSessionError: (error: ApiError) => void; onDatasetImported: (market: MarketRef, timeframe: string) => void;
+export function DataSettings({ client, onClose, onOpenSecurity, onOpenNotifications, onSessionError, onDatasetImported }: {
+  client: ApiClient; onClose: () => void; onOpenSecurity: () => void; onOpenNotifications: () => void; onSessionError: (error: ApiError) => void; onDatasetImported: (market: MarketRef, timeframe: string) => void;
 }) {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +49,7 @@ export function DataSettings({ client, onClose, onOpenSecurity, onSessionError, 
     } finally { setBusy(false); }
   }
   return <Modal title="Settings · data & integrations" titleId="data-settings-title" onClose={onClose} closeDisabled={busy}>
-    <div className="settings-navigation"><span className="status">Data</span><button type="button" onClick={onOpenSecurity} disabled={busy}>API keys & security</button></div>
+    <SettingsNavigation active="data" onData={() => {}} onSecurity={onOpenSecurity} onNotifications={onOpenNotifications} disabled={busy} />
     {error && <p className="message error" role="alert">{error}</p>}
     {notice && <p className="message" role="status">{notice}</p>}
     <section><div className="pane-title"><h3>Authoritative data sources</h3><button type="button" onClick={() => setRefresh((value) => value + 1)} disabled={busy}>Refresh</button></div>
@@ -64,6 +65,6 @@ export function DataSettings({ client, onClose, onOpenSecurity, onSessionError, 
         <button type="submit" className="primary" disabled={!file}>{busy ? 'Validating import…' : 'Import & open chart'}</button>
       </fieldset></form>
     </section>
-    <section className="readiness-note"><h3>Later integrations · not yet available</h3><p>Telegram/webhooks, executor policy and model configuration arrive with their server services. No credentials for these integrations are collected by this milestone, and live handoff remains disabled.</p></section>
+    <section className="readiness-note"><h3>Other integrations</h3><p>Configure signed webhooks and a dedicated Telegram bot under Notifications. External executor policy and model configuration are not available yet; live handoff remains disabled.</p></section>
   </Modal>;
 }

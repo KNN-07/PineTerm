@@ -1,0 +1,47 @@
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { emptyQuerySchema, errorResponses, idParamsSchema, marketRefSchema, mutationHeadersSchema, type AlertCommand, type UpdateAlert } from '@pineterm/contracts';
+import type { AlertService } from './AlertService.js';
+import { ApiError } from '../errors.js';
+import '../types.js';
+
+const uuid = { type: 'string', format: 'uuid' } as const;
+const timestamp = { type: 'integer', minimum: 0, maximum: 8_640_000_000_000_000 } as const;
+const nullableTimestamp = { anyOf: [timestamp, { type: 'null' }] } as const;
+const revision = { type: 'integer', minimum: 1 } as const;
+const nullableText = { anyOf: [{ type: 'string' }, { type: 'null' }] } as const;
+const name = { type: 'string', minLength: 1, maxLength: 100, pattern: '\\S' } as const;
+const price = { type: 'string', $ref: 'DecimalString#', maxLength: 100 } as const;
+const leafSchema = { oneOf: [
+  { type: 'object', additionalProperties: false, required: ['kind', 'operator', 'price'], properties: { kind: { const: 'price' }, operator: { type: 'string', enum: ['above', 'below', 'crosses_above', 'crosses_below'] }, price } },
+  { type: 'object', additionalProperties: false, required: ['kind', 'eventType'], properties: { kind: { const: 'pine' }, eventType: { const: 'alert' } } },
+  { type: 'object', additionalProperties: false, required: ['kind', 'eventType', 'title'], properties: { kind: { const: 'pine' }, eventType: { const: 'alertcondition' }, title: { type: 'string', minLength: 1, maxLength: 256, pattern: '\\S' } } },
+] } as const;
+const condition = { oneOf: [...leafSchema.oneOf, { type: 'object', additionalProperties: false, required: ['kind', 'operator', 'conditions'], properties: { kind: { const: 'group' }, operator: { type: 'string', enum: ['all', 'any'] }, conditions: { type: 'array', minItems: 1, maxItems: 20, items: leafSchema } } }] } as const;
+const destination = { oneOf: [
+  { type: 'object', additionalProperties: false, required: ['kind', 'id'], properties: { kind: { const: 'webhook' }, id: uuid } },
+  { type: 'object', additionalProperties: false, required: ['kind', 'chatId'], properties: { kind: { const: 'telegram' }, chatId: { type: 'string', pattern: '^-?[0-9]{1,20}$' } } },
+] } as const;
+const properties = { name, market: marketRefSchema, timeframe: { type: 'string', enum: ['1', '3', '5', '15', '30', '45', '60', '120', '240', 'D', 'W', 'M'] }, mode: { type: 'string', enum: ['quote', 'bar-close'] }, frequency: { type: 'string', enum: ['once', 'once_per_bar'], default: 'once_per_bar' }, enabled: { type: 'boolean' }, condition, scriptRevisionId: uuid, inputs: { type: 'object', maxProperties: 200, additionalProperties: { anyOf: [{ type: 'string', maxLength: 10000 }, { type: 'number' }, { type: 'boolean' }] } }, warmupFrom: timestamp, destinations: { type: 'array', maxItems: 20, uniqueItems: true, items: destination } } as const;
+const required = ['name', 'market', 'timeframe', 'mode', 'enabled', 'condition', 'destinations'] as const;
+const commandSchema = { type: 'object', additionalProperties: false, required, properties } as const;
+const alertSchema = { type: 'object', additionalProperties: false, required: [...required, 'frequency', 'id', 'revision', 'warmupFrom', 'watermark', 'pausedReason', 'createdAt', 'updatedAt'], properties: { ...properties, frequency: { type: 'string', enum: ['once', 'once_per_bar'] }, id: uuid, revision, warmupFrom: nullableTimestamp, watermark: nullableTimestamp, pausedReason: nullableText, createdAt: timestamp, updatedAt: timestamp } } as const;
+const deliverySchema = { type: 'object', additionalProperties: false, required: ['id', 'eventId', 'destination', 'state', 'attempts', 'nextAttemptAt', 'lastStatus', 'lastError', 'deliveredAt', 'createdAt'], properties: { id: uuid, eventId: uuid, destination, state: { type: 'string', enum: ['pending', 'sending', 'delivered', 'failed'] }, attempts: { type: 'integer', minimum: 0 }, nextAttemptAt: timestamp, lastStatus: { anyOf: [{ type: 'integer' }, { type: 'null' }] }, lastError: nullableText, deliveredAt: nullableTimestamp, createdAt: timestamp } } as const;
+const eventSchema = { type: 'object', additionalProperties: false, required: ['eventId', 'alertId', 'occurredAt', 'market', 'timeframe', 'message', 'alertRevision', 'kind', 'createdAt', 'deliveries'], properties: { eventId: uuid, alertId: uuid, occurredAt: timestamp, market: marketRefSchema, timeframe: { type: 'string' }, message: { type: 'string' }, scriptRevisionId: uuid, alertRevision: revision, kind: { type: 'string', enum: ['signal', 'test', 'missed'] }, createdAt: timestamp, deliveries: { type: 'array', items: deliverySchema }, missed: { type: 'object', additionalProperties: false, required: ['from', 'to', 'count', 'reason'], properties: { from: timestamp, to: timestamp, count: { type: 'integer', minimum: 1 }, reason: { type: 'string' } } } } } as const;
+const alertResponse = { type: 'object', additionalProperties: false, required: ['alert'], properties: { alert: alertSchema } } as const;
+const eventResponse = { type: 'object', additionalProperties: false, required: ['event'], properties: { event: eventSchema } } as const;
+async function rejectBody(request: FastifyRequest): Promise<void> { if (request.body !== undefined) throw new ApiError(400, 'INVALID_SCHEMA', 'This operation does not accept a request body.'); }
+
+export async function registerAlertRoutes(app: FastifyInstance, alerts: AlertService): Promise<void> {
+  await app.register(async routes => {
+    const config = { security: { access: 'admin' as const } };
+    const security = [{ adminSession: [] }]; const mutationSecurity = [{ adminSession: [], csrfToken: [] }];
+    const tags = ['Alerts'];
+    routes.get('/api/v1/alerts', { config, preValidation: rejectBody, schema: { operationId: 'listAlerts', tags, security, querystring: emptyQuerySchema, response: { 200: { type: 'object', additionalProperties: false, required: ['alerts'], properties: { alerts: { type: 'array', items: alertSchema } } }, ...errorResponses } } }, async () => ({ alerts: alerts.list() }));
+    routes.post<{ Body: AlertCommand }>('/api/v1/alerts', { config, schema: { operationId: 'createAlert', tags, security: mutationSecurity, description: 'Arms a browser-independent live alert at its first authoritative baseline; warm-up never notifies. Pine/mixed groups require confirmed-bar mode and one immutable script revision. CSV/replay cannot arm live alerts.', headers: mutationHeadersSchema, querystring: emptyQuerySchema, body: commandSchema, response: { 201: alertResponse, ...errorResponses } } }, async (request, reply) => reply.code(201).send({ alert: await alerts.create(request.body) }));
+    routes.get<{ Params: { id: string } }>('/api/v1/alerts/:id', { config, preValidation: rejectBody, schema: { operationId: 'getAlert', tags, security, params: idParamsSchema, querystring: emptyQuerySchema, response: { 200: alertResponse, ...errorResponses } } }, async request => ({ alert: alerts.get(request.params.id) }));
+    routes.put<{ Params: { id: string }; Body: UpdateAlert }>('/api/v1/alerts/:id', { config, schema: { operationId: 'updateAlert', tags, security: mutationSecurity, description: 'Full compare-and-swap replacement and explicit re-arm. Pause with enabled=false; resume starts at a fresh baseline, without stale catch-up delivery. Select a new immutable revision explicitly to change Pine.', headers: mutationHeadersSchema, params: idParamsSchema, querystring: emptyQuerySchema, body: { ...commandSchema, required: [...required, 'revision'], properties: { ...properties, revision } }, response: { 200: alertResponse, ...errorResponses } } }, async request => ({ alert: await alerts.update(request.params.id, request.body) }));
+    routes.delete<{ Params: { id: string } }>('/api/v1/alerts/:id', { config, preValidation: rejectBody, schema: { operationId: 'deleteAlert', tags, security: mutationSecurity, description: 'Stops evaluation and pending delivery; retains all event and delivery audit history.', headers: mutationHeadersSchema, params: idParamsSchema, querystring: emptyQuerySchema, response: { 204: { type: 'null' }, ...errorResponses } } }, async (request, reply) => { alerts.delete(request.params.id); return reply.code(204).send(); });
+    routes.get<{ Querystring: { alertId?: string } }>('/api/v1/alert-events', { config, preValidation: rejectBody, schema: { operationId: 'listAlertEvents', tags, security, description: 'Signal/test/missed history with durable delivery state, including archived alerts. Missed intervals never create notification outbox entries.', querystring: { type: 'object', additionalProperties: false, properties: { alertId: uuid } }, response: { 200: { type: 'object', additionalProperties: false, required: ['events'], properties: { events: { type: 'array', items: eventSchema } } }, ...errorResponses } } }, async request => ({ events: alerts.listEvents(request.query.alertId) }));
+    routes.post<{ Params: { id: string } }>('/api/v1/alerts/:id/test', { config, preValidation: rejectBody, schema: { operationId: 'testAlertDestinations', tags, security: mutationSecurity, description: 'Sends an explicitly labelled test to configured destinations; never invents/evaluates a fake condition or advances the live evaluation watermark.', headers: mutationHeadersSchema, params: idParamsSchema, querystring: emptyQuerySchema, response: { 200: eventResponse, ...errorResponses } } }, async request => ({ event: await alerts.test(request.params.id) }));
+  });
+}

@@ -4,6 +4,7 @@ import { About, SOURCE_URL } from './About.js';
 import { ApiClient, ApiError, errorMessage } from './api.js';
 import { SecuritySettings } from './SecuritySettings.js';
 import { Terminal } from './features/workspace/Terminal.js';
+import { IntegrationSettings } from './features/alerts/IntegrationSettings.js';
 
 type SessionState = 'checking' | 'signed-out' | 'signed-in' | 'unavailable';
 
@@ -15,7 +16,7 @@ export function App() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [panel, setPanel] = useState<'data' | 'security' | 'about' | null>(null);
+  const [panel, setPanel] = useState<'data' | 'security' | 'notifications' | 'about' | null>(null);
   const loginInput = useRef<HTMLInputElement>(null);
   const settingsButton = useRef<HTMLButtonElement>(null);
   const aboutButton = useRef<HTMLButtonElement>(null);
@@ -85,7 +86,7 @@ export function App() {
   function closePanel() {
     const previous = panel;
     setPanel(null);
-    if (previous === 'security' || previous === 'data') settingsButton.current?.focus();
+    if (previous === 'security' || previous === 'data' || previous === 'notifications') settingsButton.current?.focus();
     else aboutButton.current?.focus();
   }
 
@@ -134,14 +135,15 @@ export function App() {
             </form>
           </section>
         )}
-        {sessionState === 'signed-in' && <Terminal client={client} onSessionExpired={onSessionExpired} onConnection={setConnection} settingsOpen={panel === 'data'} onCloseSettings={closePanel} onOpenSecurity={() => setPanel('security')} />}
+        {sessionState === 'signed-in' && <Terminal client={client} onSessionExpired={onSessionExpired} onConnection={setConnection} settingsOpen={panel === 'data'} onCloseSettings={closePanel} onOpenSecurity={() => setPanel('security')} onOpenNotifications={() => setPanel('notifications')} />}
       </main>
       <footer className="app-footer">
         <span>PineTerm · AGPL-3.0-only</span>
         <span>Charts by <a href="https://velacharts.dev" target="_blank" rel="noopener noreferrer">Vela by LuxAlgo</a></span>
         <span>Venue-qualified data · live handoff disabled</span>
       </footer>
-      {panel === 'security' && sessionState === 'signed-in' && <SecuritySettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} />}
+      {panel === 'security' && sessionState === 'signed-in' && <SecuritySettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => setPanel('data')} onOpenNotifications={() => setPanel('notifications')} />}
+      {panel === 'notifications' && sessionState === 'signed-in' && <IntegrationSettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => setPanel('data')} onOpenSecurity={() => setPanel('security')} />}
       {panel === 'about' && <About client={client} onClose={closePanel} />}
     </div>
   );
