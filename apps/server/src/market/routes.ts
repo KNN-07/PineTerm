@@ -15,6 +15,7 @@ const decimal = { type: 'string', pattern: '^(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])
 const nullableTimestamp = { anyOf: [timestamp, { type: 'null' }] } as const;
 const marketQuery = { type: 'object', additionalProperties: false, required: ['provider', 'symbol'], properties: { provider, symbol: { type: 'string', minLength: 1, maxLength: 100 } } } as const;
 const rangeProperties = {
+  replaySessionId: { type: 'string', format: 'uuid', description: 'Active server replay session; only frozen bars closed by its acknowledged cursor are returned.' },
   timeframe,
   from: { type: 'string', pattern: '^(?:0|[1-9][0-9]*)$', description: 'Inclusive UTC epoch-ms bar open.' },
   to: { type: 'string', pattern: '^(?:0|[1-9][0-9]*)$', description: 'Exclusive UTC epoch-ms bar open; next page uses nextBefore.' },
@@ -55,7 +56,7 @@ const streamEventSchema = {
     { type: 'object', additionalProperties: false, required: ['status', 'message', 'receivedAt'], properties: { status: { type: 'string', enum: ['live', 'stale', 'historical', 'unsubscribed', 'error'] }, message: { type: 'string' }, receivedAt: timestamp, code: { type: 'string' } } },
   ] } },
 };
-interface BarsQuery { provider: MarketRef['provider']; symbol: string; timeframe: string; from?: string; to?: string; limit?: string }
+interface BarsQuery { provider: MarketRef['provider']; symbol: string; timeframe: string; replaySessionId?: string; from?: string; to?: string; limit?: string }
 interface StreamCommand { type: 'subscribe' | 'unsubscribe'; channel: 'bars' | 'quotes'; market: MarketRef; timeframe?: string }
 
 export async function registerMarketRoutes(app: FastifyInstance, service: MarketService): Promise<void> {
@@ -70,12 +71,15 @@ export async function registerMarketRoutes(app: FastifyInstance, service: Market
     routes.get<{ Querystring: BarsQuery }>('/api/v1/bars', { config, schema: { operationId: 'getBars', tags: ['Market data'], summary: 'Read newest ascending unique OHLCV in a half-open range', description: 'Default limit 500, maximum 5000. Follow exclusive to=nextBefore until null. Gaps report missing native candles; aggregates never synthesize candles. Stale cached pages include providerError; an uncached provider failure is an error, not empty history.', security, querystring: barsQuery, response: { 200: pageSchema, ...errorResponses } } }, async (request) => {
       const query = request.query;
       const range: BarRange = { ...(query.from === undefined ? {} : { from: Number(query.from) }), ...(query.to === undefined ? {} : { to: Number(query.to) }), ...(query.limit === undefined ? {} : { limit: Number(query.limit) }) };
-      return service.getBars({ provider: query.provider, symbol: query.symbol }, query.timeframe, range);
+      const market = { provider: query.provider, symbol: query.symbol };
+      return query.replaySessionId ? app.services.replay.getBars(query.replaySessionId, market, query.timeframe, range) : service.getBars(market, query.timeframe, range);
     });
-    routes.get<{ Querystring: { provider: MarketRef['provider']; symbol: string } }>('/api/v1/quotes', { config, schema: { operationId: 'getQuote', tags: ['Market data'], summary: 'Read latest observed price with explicit provenance and freshness', description: 'Not an executable bid/ask. Imported dataset closing prices are always historical and cannot feed live execution.', security, querystring: marketQuery, response: { 200: quoteSchema, ...errorResponses } } }, async (request) => service.getQuote(request.query));
+    routes.get<{ Querystring: { provider: MarketRef['provider']; symbol: string; replaySessionId?: string } }>('/api/v1/quotes', { config, schema: { operationId: 'getQuote', tags: ['Market data'], summary: 'Read latest observed price with explicit provenance and freshness', description: 'Not an executable bid/ask. Imported dataset closing prices are always historical and cannot feed live execution. With replaySessionId, only the latest revealed frozen close is returned; stopped sessions conflict.', security, querystring: { ...marketQuery, properties: { ...marketQuery.properties, replaySessionId: rangeProperties.replaySessionId } }, response: { 200: quoteSchema, ...errorResponses } } }, async (request) => request.query.replaySessionId ? app.services.replay.getQuote(request.query.replaySessionId, request.query) : service.getQuote(request.query));
     routes.get<{ Querystring: BarsQuery }>('/api/v1/bars.csv', { config, schema: { operationId: 'exportBarsCsv', tags: ['Market data'], summary: 'Export the same OHLCV page/range as the bars API', description: 'CSV uses UTC epoch-ms time. X-PineTerm-Next-Before contains the next exclusive page boundary when earlier rows remain. X-PineTerm-Data-Status and X-PineTerm-Provider-Error expose stale-provider failures.', security, querystring: barsQuery, produces: ['text/csv'], response: { 200: { type: 'string' }, ...errorResponses } } }, async (request, reply) => {
       const query = request.query;
-      const page = await service.getBars({ provider: query.provider, symbol: query.symbol }, query.timeframe, { ...(query.from === undefined ? {} : { from: Number(query.from) }), ...(query.to === undefined ? {} : { to: Number(query.to) }), ...(query.limit === undefined ? {} : { limit: Number(query.limit) }) });
+      const market = { provider: query.provider, symbol: query.symbol };
+      const range = { ...(query.from === undefined ? {} : { from: Number(query.from) }), ...(query.to === undefined ? {} : { to: Number(query.to) }), ...(query.limit === undefined ? {} : { limit: Number(query.limit) }) };
+      const page = query.replaySessionId ? await app.services.replay.getBars(query.replaySessionId, market, query.timeframe, range) : await service.getBars(market, query.timeframe, range);
       reply.type('text/csv; charset=utf-8').header('Content-Disposition', 'attachment; filename="pineterm-bars.csv"').header('X-PineTerm-Data-Status', page.status);
       if (page.nextBefore !== null) reply.header('X-PineTerm-Next-Before', String(page.nextBefore));
       if (page.providerError) reply.header('X-PineTerm-Provider-Error', page.providerError.code);

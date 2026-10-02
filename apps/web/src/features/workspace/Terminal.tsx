@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent, PointerEvent } from 'react';
 import type { VelaWorkspace } from '@luxalgo/vela/workspace';
-import type { Instrument, InvalidationEvent, MarketRef, Workspace } from '@pineterm/contracts';
+import type { Instrument, InvalidationEvent, MarketRef, ReplaySession, Workspace } from '@pineterm/contracts';
 import { ApiClient, ApiError, errorMessage } from '../../api.js';
 import { ChartWorkspace } from './ChartWorkspace.js';
 import type { ActiveChart } from './ChartWorkspace.js';
@@ -12,6 +12,9 @@ import type { StorageSnapshot } from './WorkspaceStorage.js';
 import { Watchlists } from './Watchlists.js';
 import { DataSettings } from './DataSettings.js';
 import { ScriptsDock } from '../scripts/ScriptsDock.js';
+import { TradingPanel } from '../trading/TradingPanel.js';
+import { ReplayControls } from '../trading/ReplayControls.js';
+import type { WorkspaceReplayBridge } from '../trading/WorkspaceReplayBridge.js';
 
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -49,6 +52,12 @@ export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurit
   const [to, setTo] = useState('');
   const workspaceRef = useRef<VelaWorkspace | null>(null);
   const [pineWorkspace, setPineWorkspace] = useState<VelaWorkspace | null>(null);
+  const [replayBridge, setReplayBridge] = useState<WorkspaceReplayBridge | null>(null);
+  const [replaySession, setReplaySession] = useState<ReplaySession | null>(null);
+  const [replayLocked, setReplayLocked] = useState(false);
+  const [replayReady, setReplayReady] = useState(false);
+  const replayLockRef = useRef(false);
+  const onReplayLock = useCallback((locked: boolean) => { replayLockRef.current = locked; setReplayLocked(locked); }, []);
   const storageRef = useRef<WorkspaceStorage | null>(null);
   storageRef.current = storage;
   const bootstrap = useRef<Promise<Workspace[]> | null>(null);
@@ -67,7 +76,7 @@ export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurit
       setLinks({ crosshair: !!workspace.sync.get('crosshair'), symbol: !!workspace.sync.get('symbol'), timeframe: !!workspace.sync.get('timeframe'), viewport: !!workspace.sync.get('viewport') });
     }
   }, []);
-  const onReady = useCallback((workspace: VelaWorkspace | null) => { workspaceRef.current = workspace; setPineWorkspace(workspace); if (workspace) setLayout(workspace.layout.id); }, []);
+  const onReady = useCallback((workspace: VelaWorkspace | null, bridge: WorkspaceReplayBridge | null) => { workspaceRef.current = workspace; setPineWorkspace(workspace); setReplayBridge(bridge); if (workspace) setLayout(workspace.layout.id); }, []);
 
   useEffect(() => {
     let alive = true;
@@ -181,7 +190,7 @@ export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurit
   const onSelectList = useCallback((id: string) => updateUi({ watchlistId: id }), [updateUi]);
   const selectMarket = useCallback((market: MarketRef, preferredTimeframe?: string) => {
     void (async () => {
-      const workspace = workspaceRef.current; if (!workspace) return;
+      const workspace = workspaceRef.current; if (!workspace || replayLockRef.current) return;
       try {
         const params = new URLSearchParams({ provider: market.provider, q: market.symbol });
         const { markets } = await client.request<{ markets: Instrument[] }>(`/markets?${params}`);
@@ -189,6 +198,7 @@ export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurit
         if (!instrument) throw new Error('The selected market is no longer available from its provider.');
         const currentTimeframe = preferredTimeframe ?? workspace.active.chart.market.timeframe ?? '60';
         const timeframe = instrument.timeframes.includes(currentTimeframe) ? currentTimeframe : instrument.timeframes[0]!;
+        if (replayLockRef.current) return;
         await workspace.chart.setMarket({ symbol: qualifiedMarket(market), timeframe });
         setDrawer(null); workspace.active.focus();
       } catch (failure) {
@@ -199,7 +209,7 @@ export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurit
   }, [client, onSessionError]);
 
   async function changeWorkspace(id: string, discard = false) {
-    if (!storage || busy) return;
+    if (!storage || busy || replayLockRef.current) return;
     setBusy(true); setError(null);
     try {
       const workspace = workspaceRef.current;
@@ -214,7 +224,7 @@ export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurit
     } finally { setBusy(false); }
   }
   async function workspaceCommand(action: 'new' | 'copy' | 'rename' | 'delete' | 'flush') {
-    if (!storage || busy) return;
+    if (!storage || busy || replayLockRef.current) return;
     setBusy(true); setError(null);
     try {
       const workspace = workspaceRef.current;
@@ -253,6 +263,7 @@ export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurit
     setError(null); setBusy(true);
     try {
       const params = new URLSearchParams({ provider: active.market.provider, symbol: active.market.symbol, timeframe: active.timeframe, limit: '5000' });
+      if (replaySession) params.set('replaySessionId', replaySession.id);
       for (const [field, value] of [['from', from], ['to', to]]) if (value) params.set(field!, String(Date.parse(`${value}Z`)));
       const blob = await client.request<Blob>(`/bars.csv?${params}`, { responseType: 'blob' });
       downloadBlob(blob, `${active.market.provider}-${active.market.symbol}-${active.timeframe}.csv`);
@@ -283,17 +294,18 @@ export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurit
 
   return <div className="terminal" style={{ '--bottom-height': `${ui.bottomHeight}px` } as CSSProperties}>
     <div className="workspace-controls">
-      <label htmlFor="workspace-select">Workspace</label><select id="workspace-select" aria-label="Workspace" value={saved?.workspace.id ?? ''} disabled={busy || loading || !storage} onChange={(event) => void changeWorkspace(event.target.value)}>{workspaces.map((record) => <option key={record.id} value={record.id}>{record.name}</option>)}</select>
+      <label htmlFor="workspace-select">Workspace</label><select id="workspace-select" aria-label="Workspace" value={saved?.workspace.id ?? ''} disabled={replayLocked || busy || loading || !storage} onChange={(event) => void changeWorkspace(event.target.value)}>{workspaces.map((record) => <option key={record.id} value={record.id}>{record.name}</option>)}</select>
       <span className={`save-indicator ${unsaved ? 'warning' : ''}`} role="status">{loading ? 'Loading…' : saved?.status ?? 'Unavailable'}</span>
       <button type="button" onClick={() => void workspaceCommand('flush')} disabled={busy || !storage || invalid || conflict}>Flush</button>
       <details className="workspace-menu"><summary>Manage workspace</summary><div className="workspace-menu-content"><label htmlFor="workspace-name">Workspace name</label><input id="workspace-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={100} placeholder="Name or copy name" />
-        <div className="compact-actions"><button type="button" disabled={busy || !name.trim() || invalid || conflict} onClick={() => void workspaceCommand('new')}>New</button><button type="button" disabled={busy || !name.trim() || invalid} onClick={() => void workspaceCommand('copy')}>Save as copy</button><button type="button" disabled={busy || !name.trim() || invalid || conflict} onClick={() => void workspaceCommand('rename')}>Rename</button><button type="button" className="danger" disabled={busy || !storage} onClick={() => { if (window.confirm(`Delete “${saved?.workspace.name}” and its unsaved draft?`)) void workspaceCommand('delete'); }}>Delete</button></div>
+        <div className="compact-actions"><button type="button" disabled={replayLocked || busy || !name.trim() || invalid || conflict} onClick={() => void workspaceCommand('new')}>New</button><button type="button" disabled={replayLocked || busy || !name.trim() || invalid} onClick={() => void workspaceCommand('copy')}>Save as copy</button><button type="button" disabled={replayLocked || busy || !name.trim() || invalid || conflict} onClick={() => void workspaceCommand('rename')}>Rename</button><button type="button" className="danger" disabled={replayLocked || busy || !storage} onClick={() => { if (window.confirm(`Delete “${saved?.workspace.name}” and its unsaved draft?`)) void workspaceCommand('delete'); }}>Delete</button></div>
       </div></details>
-      <label htmlFor="layout-select">Layout</label><select id="layout-select" aria-label="Layout" value={layout} disabled={!workspaceRef.current || invalid} onChange={(event) => { workspaceRef.current?.setLayout(event.target.value); }}><option value="1">1 chart</option><option value="2h">2 horizontal</option><option value="2v">2 vertical</option><option value="4">4 charts</option><option value="8">8 charts</option>{!['1', '2h', '2v', '4', '8'].includes(layout) && <option value={layout}>{layout}</option>}</select>
-      <details className="link-menu"><summary>Chart links</summary><fieldset>{(['crosshair', 'symbol', 'timeframe', 'viewport'] as const).map((kind) => <label key={kind}><input type="checkbox" checked={links[kind]} onChange={(event) => { workspaceRef.current?.sync.set(kind, event.target.checked); setLinks((current) => ({ ...current, [kind]: event.target.checked })); }} />{kind[0]!.toUpperCase() + kind.slice(1)}</label>)}</fieldset></details>
+      <label htmlFor="layout-select">Layout</label><select id="layout-select" aria-label="Layout" value={layout} disabled={replayLocked || !workspaceRef.current || invalid} onChange={(event) => { if (!replayLockRef.current) workspaceRef.current?.setLayout(event.target.value); }}><option value="1">1 chart</option><option value="2h">2 horizontal</option><option value="2v">2 vertical</option><option value="4">4 charts</option><option value="8">8 charts</option>{!['1', '2h', '2v', '4', '8'].includes(layout) && <option value={layout}>{layout}</option>}</select>
+      <details className="link-menu"><summary>Chart links</summary><fieldset disabled={replayLocked}>{(['crosshair', 'symbol', 'timeframe', 'viewport'] as const).map((kind) => <label key={kind}><input type="checkbox" checked={links[kind]} onChange={(event) => { if (!replayLockRef.current) { workspaceRef.current?.sync.set(kind, event.target.checked); setLinks((current) => ({ ...current, [kind]: event.target.checked })); } }} />{kind[0]!.toUpperCase() + kind.slice(1)}</label>)}</fieldset></details>
       <details className="export-menu"><summary>Export</summary><div className="export-menu-content"><label htmlFor="export-from">From · UTC inclusive</label><input id="export-from" type="datetime-local" value={from} onChange={(event) => setFrom(event.target.value)} /><label htmlFor="export-to">To · UTC exclusive</label><input id="export-to" type="datetime-local" value={to} onChange={(event) => setTo(event.target.value)} /><button type="button" onClick={() => void exportCsv()} disabled={busy || !active.market}>Download raw CSV</button><small>Newest 5,000 bars in the selected range.</small><button type="button" onClick={() => { const workspace = workspaceRef.current; if (!workspace?.screenshot()) setError('Chart image is unavailable until the renderer is ready.'); else workspace.downloadScreenshot(); }}>Download chart PNG</button><small>Vela chart raster: drawing layers are included; DOM overlays are best-effort. Outer docks, dialogs and application chrome are not a full-browser screenshot.</small></div></details>
       <div className="dock-actions"><button type="button" onClick={() => openDock('right')}>Watchlists / tools</button><button type="button" onClick={() => openDock('bottom')}>Editor / trading</button></div>
     </div>
+    <ReplayControls client={client} workspace={pineWorkspace} bridge={replayBridge} session={replaySession} onSession={setReplaySession} onLock={onReplayLock} onTradingReady={setReplayReady} onSessionError={onSessionError} />
     {(error || saved?.message || notice || newer) && <div className={`terminal-notice ${error || invalid || conflict ? 'error' : ''}`} role={error || invalid || conflict ? 'alert' : 'status'}>
       <span>{error ?? saved?.message ?? notice ?? 'A newer server revision is available. Reload to view it.'}</span>
       {(conflict || invalid || newer) && <button type="button" disabled={busy} onClick={() => { if (window.confirm('Discard this local draft and reload the server copy?')) void changeWorkspace(saved!.workspace.id, true); }}>Reload server</button>}
@@ -314,8 +326,8 @@ export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurit
         <div className={`bottom-resizer ${resizing ? 'is-resizing' : ''}`} role="separator" tabIndex={0} aria-label="Resize bottom dock" aria-orientation="horizontal" aria-valuemin={120} aria-valuemax={500} aria-valuenow={Math.round(ui.bottomHeight)} onPointerDown={resizePointer} onKeyDown={resizeKeyboard} />
         <div className="dock-tabs" role="tablist" aria-label="Bottom dock">{(['editor', 'tester', 'trading'] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={ui.bottomTab === tab} onClick={() => updateUi({ bottomTab: tab })}>{BOTTOM_LABELS[tab]}</button>)}<span className="dock-context">{active.market ? qualifiedMarket(active.market) : 'No instrument'} · {active.timeframe}</span><button type="button" className="dock-close" onClick={() => { setDrawer(null); drawerOrigin.current?.focus(); }}>Close</button></div>
         <div className="dock-content" role="tabpanel">
-          <ScriptsDock client={client} workspace={pineWorkspace} active={active} tab={ui.bottomTab} onTab={(bottomTab) => updateUi({ bottomTab })} onSessionError={onSessionError} />
-          {ui.bottomTab === 'trading' && <section className="unavailable-feature"><span className="eyebrow">Not yet available</span><h2>Trading</h2><p>Paper accounts and server-authoritative replay arrive in milestone 5. No orders, balances or portfolio gains are fabricated. Live executor handoff is disabled.</p><div className="feature-boundaries"><span>Venue-qualified data</span><span>Raw bars remain authoritative</span><span>Execution disabled</span></div></section>}
+          <ScriptsDock client={client} workspace={pineWorkspace} active={active} replayLocked={replayLocked} tab={ui.bottomTab} onTab={(bottomTab) => updateUi({ bottomTab })} onSessionError={onSessionError} />
+          <div hidden={ui.bottomTab !== 'trading'} inert={replayLocked && !replaySession}><TradingPanel client={client} active={active} replay={replaySession} replayReady={replayReady} onSessionError={onSessionError} /></div>
         </div>
       </section>
     </div>

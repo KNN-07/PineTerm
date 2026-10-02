@@ -16,3 +16,5 @@ export function decimalString(value: Decimal): string {
   if (!value.isFinite()) throw new Error('Cannot serialize a nonfinite financial value');
   return value.isZero() ? '0' : value.toFixed();
 }
+
+export * from './paper.js';

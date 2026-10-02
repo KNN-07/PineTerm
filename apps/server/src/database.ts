@@ -466,6 +466,24 @@ const migrations: readonly Migration[] = [
       ) STRICT;
     `,
   },
+  {
+    version: 5,
+    name: 'paper_acceptance_references_and_quote_deduplication',
+    sql: `
+      ALTER TABLE paper_orders ADD COLUMN accepted_reference_event_id TEXT;
+      ALTER TABLE paper_orders ADD COLUMN accepted_reference_observed_at INTEGER;
+      CREATE TABLE paper_processed_quotes (
+        account_id TEXT NOT NULL REFERENCES paper_accounts(id) ON DELETE RESTRICT,
+        provider TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        source_event_id TEXT NOT NULL,
+        observed_at INTEGER NOT NULL,
+        PRIMARY KEY(account_id, provider, symbol, source_event_id)
+      ) STRICT;
+      CREATE INDEX paper_fills_account ON paper_fills(account_id, created_at, id);
+      CREATE INDEX paper_ledger_account ON paper_ledger(account_id, occurred_at, id);
+    `,
+  },
 ];
 
 export function openDatabase(dataDir: string, clock: () => number): AppDatabase {

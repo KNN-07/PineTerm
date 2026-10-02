@@ -23,6 +23,10 @@ import { PineService } from './pine/PineService.js';
 import { registerPineRoutes } from './pine/routes.js';
 import { ScriptService } from './scripts/ScriptService.js';
 import { registerScriptRoutes } from './scripts/routes.js';
+import { PaperService } from './paper/PaperService.js';
+import { registerPaperRoutes } from './paper/routes.js';
+import { ReplayService } from './replay/ReplayService.js';
+import { registerReplayRoutes } from './replay/routes.js';
 import './types.js';
 
 export interface BuildAppOptions {
@@ -51,7 +55,9 @@ export async function buildApp({ config, providers = {}, clock = Date.now }: Bui
   let security: SecurityBoundary | undefined;
   let market: MarketService | undefined;
   let pine: PineService | undefined;
-  app.addHook('preClose', async () => { await pine?.close(); market?.close(); events.close(); });
+  let paper: PaperService | undefined;
+  let replay: ReplayService | undefined;
+  app.addHook('preClose', async () => { await replay?.close(); await paper?.close(); await pine?.close(); market?.close(); events.close(); });
   app.addHook('onClose', async () => {
     security?.dispose();
     secrets.dispose();
@@ -64,10 +70,14 @@ export async function buildApp({ config, providers = {}, clock = Date.now }: Bui
     pine = new PineService(db, market, clock, events);
     await pine.initialise();
     const scripts = new ScriptService(db, clock, events);
+    paper = new PaperService(db, market, clock, events);
+    await paper.initialise();
+    replay = new ReplayService(db, market, paper, clock, events);
+    await replay.initialise();
     app.decorate('db', db);
     app.decorate('security', security);
     app.decorate('events', events);
-    app.decorate('services', { config, clock, providers: transports, secrets, market, pine, scripts });
+    app.decorate('services', { config, clock, providers: transports, secrets, market, pine, scripts, paper, replay });
     app.decorateRequest('principal', null);
     installErrorHandling(app);
     for (const schema of sharedSchemas) app.addSchema(schema);
@@ -109,6 +119,8 @@ export async function buildApp({ config, providers = {}, clock = Date.now }: Bui
     await registerWorkspaceRoutes(app);
     await registerPineRoutes(app);
     await registerScriptRoutes(app);
+    await registerPaperRoutes(app);
+    await registerReplayRoutes(app, replay);
     const hasWebBuild = existsSync(join(config.webDistDir, 'index.html'));
     if (config.mode === 'production' && !hasWebBuild) {
       throw new Error('Production web assets are missing. Run npm run build before npm start.');

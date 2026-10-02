@@ -12,7 +12,7 @@ import './scripts.css';
 interface SavedScript { script: ScriptRecord; revision: ScriptRevision }
 const EMPTY_SOURCE = '//@version=6\nindicator("Untitled", overlay=true)\nplot(close, "Close")\n';
 
-export function ScriptsDock({ client, workspace, active, tab, onTab, onSessionError }: { client: ApiClient; workspace: VelaWorkspace | null; active: ActiveChart; tab: 'editor' | 'tester' | 'trading'; onTab: (tab: 'editor' | 'tester') => void; onSessionError: (failure: ApiError) => void }) {
+export function ScriptsDock({ client, workspace, active, replayLocked, tab, onTab, onSessionError }: { client: ApiClient; workspace: VelaWorkspace | null; active: ActiveChart; replayLocked: boolean; tab: 'editor' | 'tester' | 'trading'; onTab: (tab: 'editor' | 'tester') => void; onSessionError: (failure: ApiError) => void }) {
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
   const [saved, setSaved] = useState<SavedScript | null>(null);
   const [revision, setRevision] = useState<ScriptRevision | null>(null);
@@ -155,7 +155,7 @@ export function ScriptsDock({ client, workspace, active, tab, onTab, onSessionEr
     } catch (failure) { fail(failure); } finally { setBusy(false); }
   }
 
-  return <div className="scripts-dock">
+  return <div className="scripts-dock" hidden={tab === 'trading'}>
     <section className="pine-editor-panel" hidden={tab !== 'editor'} aria-label="Pine editor and editable script library">
       <div className="pine-toolbar">
         <label>Library<select aria-label="Pine script library" value={saved?.script.id ?? ''} disabled={busy} onChange={(event) => { if (event.target.value) void selectScript(event.target.value); }}>
@@ -201,6 +201,6 @@ export function ScriptsDock({ client, workspace, active, tab, onTab, onSessionEr
         </div>
       </div>
     </section>
-    <div hidden={tab !== 'tester'}><StrategyTester client={client} revision={revision} sourceSaved={!!revision && source === revision.source} inputs={inputs} props={props} active={active} instrument={instrument} workspace={workspace} version={jobVersion} onError={fail} /></div>
+    <div hidden={tab !== 'tester'}><StrategyTester client={client} revision={revision} sourceSaved={!!revision && source === revision.source} inputs={inputs} props={props} active={active} instrument={instrument} workspace={workspace} replayLocked={replayLocked} version={jobVersion} onError={fail} /></div>
   </div>;
 }

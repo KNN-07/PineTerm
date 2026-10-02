@@ -262,3 +262,4 @@ export * from './market.js';
 export * from './workspace.js';
 export * from './pine.js';
 export * from './templates.js';
+export * from './trading.js';

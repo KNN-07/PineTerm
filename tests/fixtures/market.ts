@@ -44,6 +44,7 @@ export class FixtureTransport implements MarketTransport {
     return () => { listeners!.delete(onEvent); if (!listeners!.size) this.listeners.delete(key); };
   }
   emit(timeframe: string, event: MarketEvent): void {
+    if (event.kind === 'quote') this.quote = { ...event.quote, market: { ...event.quote.market } };
     for (const listener of this.listeners.get(this.symbol + ':' + timeframe) ?? []) listener(event);
   }
   close(): void { this.listeners.clear(); }

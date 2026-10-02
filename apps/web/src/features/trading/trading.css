@@ -1,0 +1,30 @@
+.replay-controls { flex-shrink: 0; padding: 5px 10px; background: #131b27; border-bottom: 1px solid #253247; font-size: 11px; position: relative; z-index: 6; }
+.replay-controls summary, .trading-panel summary { cursor: pointer; padding: 6px 0; color: #e6edf7; }
+.replay-picker { position: absolute; top: 100%; left: 10px; width: min(640px, calc(100vw - 20px)); padding: 12px; border: 1px solid #253247; background: #131b27; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; box-shadow: 0 12px 40px #0008; max-height: 65vh; overflow: auto; }
+.replay-picker label, .paper-create label, .paper-ticket label, .paper-account-toolbar label { display: grid; gap: 4px; color: #a1afc4; min-width: 0; }
+.replay-picker input, .paper-create input, .paper-ticket input, .paper-ticket select, .paper-account-toolbar select { width: 100%; min-width: 0; }
+.replay-picker small, .paper-ticket small { grid-column: 1 / -1; color: #a1afc4; }
+.replay-active { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.replay-active > strong { color: #f7c86c; }
+.replay-active time { font-family: ui-monospace, monospace; }
+.replay-active small { flex-basis: 100%; color: #a1afc4; }
+.replay-native-disabled { opacity: .5; }
+.replay-awaiting-close { position: relative; }
+.replay-awaiting-close > * { visibility: hidden !important; }
+.vela-cell.replay-awaiting-close::after { content: 'Replay · awaiting first completed bar on this interval' !important; position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; color: #a1afc4; background: #0b1018; font: 12px system-ui, sans-serif; opacity: 1; }
+.trading-panel { padding: 10px 12px 18px; font-size: 12px; }
+.paper-boundary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 7px 10px; border: 1px solid #253247; background: #182131; margin-bottom: 10px; }
+.paper-boundary strong { color: #f7c86c; }.paper-boundary span { color: #a1afc4; }
+.paper-account-toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.paper-account-toolbar > label { min-width: 220px; }
+.paper-create { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 10px; padding: 12px 0; }
+.paper-balances { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 10px 0; }
+.paper-balances strong, .trading-panel table { font-family: ui-monospace, monospace; font-size: 11px; }
+.paper-ticket { display: grid; grid-template-columns: repeat(4, minmax(100px, 1fr)); align-items: end; gap: 8px; margin: 10px 0 14px; }
+.paper-ticket > strong { grid-column: 1 / -1; }
+.trading-table-scroll { overflow-x: auto; max-width: 100%; }
+.trading-panel table { border-collapse: collapse; width: 100%; text-align: left; }
+.trading-panel th, .trading-panel td { border-bottom: 1px solid #253247; padding: 7px 8px; white-space: nowrap; }
+.trading-panel th { color: #a1afc4; font-weight: 500; }.trading-panel td code { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 420px; display: block; }
+@media (max-width: 900px) { .paper-ticket { grid-template-columns: repeat(2, minmax(0, 1fr)); }.paper-create { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .replay-controls { padding: 4px 8px; }.replay-active { max-height: 150px; overflow-y: auto; }.replay-active button, .replay-picker button, .trading-panel button { min-height: 40px; }.replay-picker { grid-template-columns: 1fr; }.paper-account-toolbar > label { width: 100%; }.trading-panel { padding: 10px; } }

@@ -38,9 +38,10 @@ export class ApiClient {
 
   async request<T>(
     path: string,
-    options: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown; csrf?: boolean; signal?: AbortSignal; responseType?: 'json' | 'blob' | 'response' } = {},
+    options: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown; csrf?: boolean; signal?: AbortSignal; responseType?: 'json' | 'blob' | 'response'; headers?: Record<string, string> } = {},
   ): Promise<T> {
     const headers = new Headers({ Accept: options.responseType === 'blob' ? '*/*' : 'application/json' });
+    for (const [name, value] of Object.entries(options.headers ?? {})) headers.set(name, value);
     const multipart = options.body instanceof FormData;
     if (options.body !== undefined && !multipart) headers.set('Content-Type', 'application/json');
     if (options.csrf) {

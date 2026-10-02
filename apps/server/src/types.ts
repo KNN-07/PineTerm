@@ -6,6 +6,8 @@ import type { SecretStore } from './secrets.js';
 import type { MarketService } from './market/MarketService.js';
 import type { PineService } from './pine/PineService.js';
 import type { ScriptService } from './scripts/ScriptService.js';
+import type { PaperService } from './paper/PaperService.js';
+import type { ReplayService } from './replay/ReplayService.js';
 
 export interface ServerServices {
   config: Config;
@@ -15,6 +17,8 @@ export interface ServerServices {
   market: MarketService;
   pine: PineService;
   scripts: ScriptService;
+  paper: PaperService;
+  replay: ReplayService;
 }
 
 declare module 'fastify' {

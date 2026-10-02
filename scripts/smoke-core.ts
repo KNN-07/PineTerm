@@ -4,15 +4,18 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import type { AddressInfo } from 'node:net';
 import { buildApp } from '../apps/server/src/app.js';
 import { loadConfig } from '../apps/server/src/config.js';
 import { FIXTURE_START, FixtureTransport } from '../tests/fixtures/market.js';
 import { runDataScenario } from './smoke/data.js';
 import { runWorkspaceScenario } from './smoke/workspace.js';
 import { runPineScenario } from './smoke/pine.js';
+import { runPaperScenario } from './smoke/paper.js';
+import { runReplayScenario } from './smoke/replay.js';
 
 const scenario = process.argv.includes('--scenario') ? process.argv[process.argv.indexOf('--scenario') + 1] : 'all';
-if (!['all', 'auth', 'data', 'workspace', 'pine'].includes(scenario)) throw new Error(`Unknown smoke scenario: ${scenario}`);
+if (!['all', 'auth', 'data', 'workspace', 'pine', 'paper', 'replay'].includes(scenario)) throw new Error(`Unknown smoke scenario: ${scenario}`);
 const runner = spawnSync('docker', ['run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '64', '--memory', '512m', '--cpus', '1', '--tmpfs', '/tmp:rw,noexec,nosuid,size=16m', 'pineterm-pine-runner:local', '--health'], { encoding: 'utf8', timeout: 15000 });
 assert.equal(runner.status, 0, runner.stderr || runner.error?.message);
 assert.equal(JSON.parse(runner.stdout).version, '0.10.0');
@@ -25,7 +28,7 @@ let now = FIXTURE_START + 360000;
 const clock = () => now;
 const coinbase = new FixtureTransport('coinbase', clock);
 const binance = new FixtureTransport('binance', clock);
-const app = await buildApp({ config, providers: { coinbase, binance }, clock });
+let app = await buildApp({ config, providers: { coinbase, binance }, clock });
 try {
   const url = await app.listen({ host: '127.0.0.1', port: 0 });
   const request = (path: string, init: RequestInit = {}) => fetch(url + '/api/v1' + path, init);
@@ -52,6 +55,13 @@ try {
   if (scenario === 'all' || scenario === 'data') await runDataScenario(url, headers, coinbase, value => { now = value; });
   if (scenario === 'all' || scenario === 'workspace') await runWorkspaceScenario(url, headers);
   if (scenario === 'all' || scenario === 'pine') await runPineScenario(url, headers, app);
+  if (scenario === 'all' || scenario === 'paper') await runPaperScenario(url, headers, coinbase, value => { now = value; }, async () => {
+    const port = (app.server.address() as AddressInfo).port;
+    await app.close();
+    app = await buildApp({ config, providers: { coinbase, binance }, clock });
+    await app.listen({ host: '127.0.0.1', port });
+  });
+  if (scenario === 'all' || scenario === 'replay') await runReplayScenario(url, headers);
   assert.equal((await request('/session', { method: 'DELETE', headers: deleteHeaders })).status, 204);
   assert.equal((await request('/session', { headers: { Cookie: cookie } })).status, 401);
   console.log('auth: real HTTP login, Origin rejection, CSRF rejection, one-time scoped token, revocation, logout observed');

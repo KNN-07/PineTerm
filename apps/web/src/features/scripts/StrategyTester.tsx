@@ -24,7 +24,7 @@ function Curve({ points, field, currency }: { points: EquityPoint[]; field: 'equ
   return <figure className="strategy-curve"><figcaption>{field === 'equity' ? 'Equity' : 'Drawdown'} · {currency}</figcaption><svg role="img" aria-label={`${field} curve in ${currency}, ${points.length} bar-aligned observations`} viewBox="0 0 790 155"><path d="M45,15V116H745" fill="none" stroke="#253247" /><path d={path} fill="none" stroke={field === 'equity' ? '#2DD4BF' : '#FB7185'} strokeWidth="2" /><text x="2" y="24">{high.toPrecision(6)}</text><text x="2" y="116">{low.toPrecision(6)}</text><text x="45" y="144">{new Date(first).toISOString().slice(0, 16)}</text><text x="745" y="144" textAnchor="end">{new Date(last).toISOString().slice(0, 16)} UTC</text></svg></figure>;
 }
 
-export function StrategyTester({ client, revision, sourceSaved, inputs, props, active, instrument, workspace, version, onError }: { client: ApiClient; revision: ScriptRevision | null; sourceSaved: boolean; inputs: Record<string, PineValue>; props: Record<string, PineValue>; active: ActiveChart; instrument: Instrument | null; workspace: VelaWorkspace | null; version: number; onError: (failure: unknown) => void }) {
+export function StrategyTester({ client, revision, sourceSaved, inputs, props, active, instrument, workspace, replayLocked, version, onError }: { client: ApiClient; revision: ScriptRevision | null; sourceSaved: boolean; inputs: Record<string, PineValue>; props: Record<string, PineValue>; active: ActiveChart; instrument: Instrument | null; workspace: VelaWorkspace | null; replayLocked: boolean; version: number; onError: (failure: unknown) => void }) {
   const [jobs, setJobs] = useState<BacktestJob[]>([]);
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<BacktestJob | null>(null);
@@ -56,7 +56,7 @@ export function StrategyTester({ client, revision, sourceSaved, inputs, props, a
   useEffect(() => { setFrom(''); setTo(''); setBounds(null); }, [active.market?.provider, active.market?.symbol, active.timeframe]);
   useEffect(() => {
     const chart = workspace?.cell(active.cellId)?.chart;
-    if (!chart || !job?.result || job.request.market.provider !== active.market?.provider || job.request.market.symbol !== active.market?.symbol || job.request.timeframe !== active.timeframe) return;
+    if (replayLocked || !chart || !job?.result || job.request.market.provider !== active.market?.provider || job.request.market.symbol !== active.market?.symbol || job.request.timeframe !== active.timeframe) return;
     const ids: string[] = [];
     chart.marks.defineGroup({ id: 'pineterm-backtest', label: 'PineTerm backtest fills', visible: true });
     for (const trade of job.result.trades) {
@@ -68,7 +68,7 @@ export function StrategyTester({ client, revision, sourceSaved, inputs, props, a
       }
     }
     return () => { for (const id of ids) chart.marks.remove(id); };
-  }, [job, workspace, active.cellId, active.market?.provider, active.market?.symbol, active.timeframe]);
+  }, [job, workspace, replayLocked, active.cellId, active.market?.provider, active.market?.symbol, active.timeframe]);
 
   async function historyPreset() {
     if (!active.market) return;

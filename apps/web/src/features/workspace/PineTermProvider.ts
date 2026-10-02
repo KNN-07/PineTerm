@@ -1,4 +1,5 @@
 import type { BarRange, DataProvider, OHLCV, ProviderInfo, SymbolDescriptor, SymbolInfo } from '@luxalgo/vela';
+import { barClose } from '@luxalgo/vela/workspace';
 import type { BarPage, Instrument, MarketRef, ProviderId, Quote } from '@pineterm/contracts';
 import { TIMEFRAMES } from '@pineterm/contracts';
 import { ApiClient, ApiError, errorMessage } from '../../api.js';
@@ -20,9 +21,18 @@ export function parseMarket(symbol: string | undefined): MarketRef | null {
 }
 export const feedKey = (market: MarketRef, timeframe: string): string => `${market.provider}:${market.symbol}:${timeframe}`;
 
+export interface ReplayBinding { sessionId: string; cursor: number }
+
 /** Shared browser subscriptions; all candles and quotes originate in PineTerm. */
 export class BackendMarketStream {
   private entries = new Map<string, StreamEntry>();
+  replay: ReplayBinding | null = null;
+  generation = 0;
+  setReplay(binding: ReplayBinding | null): void {
+    this.replay = binding;
+    this.generation++;
+    for (const entry of this.entries.values()) entry.controller?.abort();
+  }
   constructor(private readonly client: ApiClient, private readonly onSessionError: (error: ApiError) => void) {}
   subscribe(market: MarketRef, timeframe: string, channel: 'bars' | 'quotes', listener: (frame: StreamFrame) => void): () => void {
     const key = `${channel}:${feedKey(market, channel === 'quotes' ? '1' : timeframe)}`;
@@ -41,7 +51,7 @@ export class BackendMarketStream {
   }
   private connect(key: string, entry: StreamEntry): void {
     if (!entry.listeners.size) return;
-    const emit = (frame: StreamFrame) => { for (const listener of entry.listeners) listener(frame); };
+    const emit = (frame: StreamFrame) => { if (!this.replay) for (const listener of entry.listeners) listener(frame); };
     const status = (state: string, message: string) => emit({ type: 'status', subscriptionId: key, sequence: 0, payload: { status: state, message, receivedAt: Date.now() } });
     const url = new URL('/api/v1/stream', window.location.href); url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(url);
@@ -59,8 +69,9 @@ export class BackendMarketStream {
       const controller = new AbortController(); entry.controller = controller;
       const query = new URLSearchParams({ provider: entry.market.provider, symbol: entry.market.symbol });
       if (entry.channel === 'bars') { query.set('timeframe', entry.timeframe); query.set('limit', '5000'); }
+      const generation = this.generation;
       void this.client.request<BarPage | Quote>(`/${entry.channel === 'bars' ? 'bars' : 'quotes'}?${query}`, { signal: controller.signal }).then((result) => {
-        if (controller.signal.aborted || entry.socket !== socket) return;
+        if (controller.signal.aborted || entry.socket !== socket || generation !== this.generation || this.replay) return;
         if ('bars' in result) {
           for (const bar of result.bars) emit({ type: 'bar', subscriptionId: key, sequence: 0, payload: { kind: 'update', bar, receivedAt: result.asOf } });
           status(result.status, result.providerError?.message ?? 'Authoritative history refreshed.');
@@ -113,21 +124,40 @@ export class PineTermProvider implements DataProvider {
   private gapCounts: Record<string, number> = {};
   private controllers = new Set<AbortController>();
   private stops = new Set<() => void>();
+  private replayTapes = new Map<string, readonly OHLCV[]>();
   constructor(readonly provider: ProviderId, private readonly client: ApiClient, private readonly stream: BackendMarketStream, private readonly onFeed: (state: FeedState) => void, private readonly onSessionError: (error: ApiError) => void) {}
+  get replay(): ReplayBinding | null { return this.stream.replay; }
+  setReplayTapes(tapes: Array<{ market: MarketRef; timeframe: string; bars: OHLCV[] }>): void {
+    this.replayTapes.clear();
+    for (const tape of tapes) if (tape.market.provider === this.provider) this.replayTapes.set(feedKey(tape.market, tape.timeframe), tape.bars);
+  }
   info(): ProviderInfo {
     return { name: this.provider, displayName: this.provider === 'csv' ? 'Imported CSV · historical' : this.provider === 'binance' ? 'Binance Spot' : 'Coinbase Exchange', supportedTimeframes: TIMEFRAMES, capabilities: { enumerate: true, stream: this.provider !== 'csv', symbolInfo: true } };
   }
   async getBars(ticker: string, timeframe: string, range: BarRange): Promise<OHLCV[]> {
     const market: MarketRef = { provider: this.provider, symbol: ticker };
+    const tape = this.replay && this.replayTapes.get(feedKey(market, timeframe));
+    if (tape) {
+      // Chart-owned copies: the replay controller may mutate its tape. Never use Vela's offline data mode, which synthesizes live ticks.
+      this.onFeed({ market, timeframe, kind: 'historical', asOf: this.replay!.cursor, gaps: 0, message: 'Frozen replay tape · chart clock controls visibility' });
+      return tape.filter(bar => (range.from === undefined || bar.time >= range.from) && (range.to === undefined || bar.time < range.to)).slice(-(range.limit ?? 500)).map(bar => ({ ...bar }));
+    }
     const controller = new AbortController(); this.controllers.add(controller);
     const query = new URLSearchParams({ provider: this.provider, symbol: ticker, timeframe, limit: String(Math.min(range.limit ?? 500, 5000)) });
+    const generation = this.stream.generation;
+    const replay = this.stream.replay;
+    if (replay) {
+      query.set('replaySessionId', replay.sessionId);
+      query.set('to', String(Math.floor(Math.min(range.to ?? replay.cursor, replay.cursor))));
+    }
     if (range.from !== undefined) query.set('from', String(Math.max(0, Math.floor(range.from))));
-    if (range.to !== undefined) query.set('to', String(Math.floor(range.to)));
+    if (!replay && range.to !== undefined) query.set('to', String(Math.floor(range.to)));
     try {
       const page = await this.client.request<BarPage>(`/bars?${query}`, { signal: controller.signal });
+      if (controller.signal.aborted || generation !== this.stream.generation) throw new DOMException('Market context changed', 'AbortError');
       this.gapCounts[feedKey(market, timeframe)] = page.gaps.length;
-      this.onFeed({ market, timeframe, kind: page.bars.length === 0 ? 'empty' : page.status, asOf: page.asOf, gaps: page.gaps.length, message: page.providerError?.message ?? (page.bars.length ? (page.status === 'historical' ? 'Historical data · no live feed' : `${this.provider.toUpperCase()} authoritative candles`) : 'No history in this range. No candles were invented.') });
-      return page.bars;
+      this.onFeed({ market, timeframe, kind: page.bars.length === 0 ? 'empty' : page.status, asOf: page.asOf, gaps: page.gaps.length, message: page.providerError?.message ?? (replay ? 'Replay · frozen completed raw bars at the server cursor' : page.bars.length ? (page.status === 'historical' ? 'Historical data · no live feed' : `${this.provider.toUpperCase()} authoritative candles`) : 'No history in this range. No candles were invented.') });
+      return replay ? page.bars.filter(bar => barClose(bar.time, timeframe) <= replay.cursor) : page.bars;
     } catch (error) {
       if (!controller.signal.aborted) {
         this.onFeed({ market, timeframe, kind: 'unavailable', message: errorMessage(error), asOf: null, gaps: 0 });
@@ -172,4 +202,5 @@ export class PineTermProvider implements DataProvider {
     return release;
   }
   dispose(): void { for (const controller of this.controllers) controller.abort(); this.controllers.clear(); for (const stop of this.stops) stop(); this.stops.clear(); }
+  resetPending(): void { for (const controller of this.controllers) controller.abort(); this.controllers.clear(); }
 }

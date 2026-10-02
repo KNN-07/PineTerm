@@ -8,7 +8,7 @@ An original, single-user crypto-first terminal built around [Vela](https://githu
 
 ## Readiness
 
-Verified: administrator sessions/scoped keys; transactional SQLite persistence; Binance/Coinbase OHLCV, quotes and streaming; historical CSV import/export; Vela layouts/drawings/settings; named workspaces/watchlists; immutable Pine library, browser indicators and isolated reproducible strategy backtests; OpenAPI and production serving. Paper trading/replay, alerts, external execution and Pi UI are subsequent milestones and **not available yet**. No prices, portfolio gains, or model answers are seeded.
+Verified: administrator sessions/scoped keys; transactional SQLite persistence; Binance/Coinbase OHLCV, quotes and streaming; historical CSV import/export; Vela layouts/drawings/settings; named workspaces/watchlists; immutable Pine library, browser indicators and isolated reproducible strategy backtests; server-authoritative spot paper trading and isolated bar replay; OpenAPI and production serving. Alerts, external execution and Pi UI are subsequent milestones and **not available yet**. No prices, portfolio gains, or model answers are seeded.
 
 ### Market data
 
@@ -47,6 +47,20 @@ Backtests require an immutable saved strategy revision and an explicit UTC, alig
 PineTS also treats `currency.NONE` literally rather than resolving the instrument quote. Strategy currency must match quote currency exactly; USD is not USDT and no FX conversion is supplied. New strategy templates explicitly use the active quote currency, capital 10000, fixed quantity 1, commission 0.1%, slippage 0 and next-bar order processing. Existing/imported code retains its own settings.
 
 `npm run smoke:core -- --scenario pine` exercised real Docker/HTTP execution: six-bar round trip entry 10 / exit 14, fees 2, final equity 1002; one-tick slippage entry 10.01 / exit 13.99, final 1001.98; capital override 2000 → final 2001.98. Paginated/unpaginated orders/trades/equity matched. SMA override, duplicate input titles, malformed source, no-future MTF, immutable revision/archive provenance, cancellation, API responsiveness and the actual 60-second timeout were exercised. [Actual Strategy Tester screenshot](design/screenshots/pineterm-backtest.png) uses the explicitly imported deterministic historical fixture—not portfolio gains.
+
+### Paper trading and replay
+
+Paper accounts hold one explicit quote currency with canonical decimal balances. No leverage, shorts, implicit USD/USDT conversion or real money. Set initial cash, commission (default 10 bps) and adverse slippage (default 0 bps) before creating an account. The ticket, reservations, cancellation, holdings/P/L, fills and cash ledger are server-owned and survive restart.
+
+Live paper market orders wait for the first fresh observed quote **after** acceptance. Limits fill at-or-better; stops become market on crossing. Fees are charged separately, limit slippage is clamped at the limit, and unaffordable gaps reject rather than creating negative cash. Stale/disconnected feeds and CSV datasets cannot fill live paper. Reset requires explicit confirmation, archives the old audit ledger and creates a fresh account.
+
+Authenticated API: `POST/GET /api/v1/paper/accounts`, `GET /paper/accounts/:id`, `POST /paper/orders` with `Idempotency-Key`, `POST /paper/orders/:id/cancel`, `GET /paper/orders`, `/paper/positions`, `/paper/fills`, and admin `POST /paper/accounts/:id/reset` with `{ "confirm": true }`. Reads require `paper:read`; placement/cancellation require `paper:trade`. Repeating an identical key/body returns the original order; conflicting reuse returns 409. See OpenAPI for full decimal-string request/response contracts.
+
+**Bar replay** loads a complete confirmed window and creates a separate replay paper account. Start/step/Play/Pause/rewind/Stop use acknowledged server cursors; Play has one timer, not an independent chart clock. Native market/interval/layout switching is locked. Frozen chart tapes use the registered provider seam—not Vela’s offline-data mode, which synthesizes ticks. Workers receive only completed primary/secondary bars at the acknowledged cursor, including older-client requests; entry/rewind clears secondary caches and browser engines. Backtest fill markers are hidden during replay. Stop refreshes current live history; rewind archives the later replay ledger and starts a fresh account.
+
+Replay market orders fill at the next raw-bar open. Limit/stop fills use deterministic OHLC gap rules, not an invented intrabar path; coarse-only datasets acknowledge at bar close and exclude orders accepted mid-bar. No OCO guarantee. Replay never sends live orders or notifications; separately armed server live alerts continue. Historical CSV is replayable, not a live venue.
+
+`npm run smoke:core -- --scenario paper` exercised actual HTTP buy 2 @ 10 → cash 980, sell 1 @ 12 → cash 992/holding 1/realized P/L 2, idempotency, stale waiting, cancellation and restart preservation. `--scenario replay` proved next-open fills, unchanged live ledger, fresh-account rewind, stopped-session rejection, and 5-minute value absent at 00:04 → 14 at 00:05. Behavior tests also exercise concurrent reservations, slippage/fees, unaffordable gaps and same-market live-quote isolation. Actual development/production browser checks exercised live paper buy/cancel, replay buy/step, rewind, Play/Pause, mixed 1m/5m no-future reveal, mobile ticket/Escape and return-to-live. The actual Pine worker’s `request.security(..., "5", close, lookahead=barmerge.lookahead_off)` returned `null` at cursor 00:04 and 14 at 00:05, matching the isolated runner. [Actual replay screenshot](design/screenshots/pineterm-replay.png) uses an explicitly imported historical fixture, not live portfolio gains.
 
 
 ## Install and run
@@ -114,7 +128,7 @@ npm run runner:build
 npm run smoke:core
 ```
 
-The core smoke starts real Fastify HTTP with temporary SQLite and injected deterministic providers, and launches the real restricted Docker runner. Scenarios exercise authentication/security, exact imports/ranges/streaming, workspace CAS/order persistence, and Pine fills/costs/equity/provenance/cancellation/deadline isolation. Behavior tests cover financial, authorization, confirmation and immutability boundaries. Real Binance/Coinbase HTTP and successive stream updates were separately exercised through the authenticated app. Actual development/production browser checks cover chart interaction, saved reload, source editing/indicators/diagnostics and Strategy Tester results; screenshots are running-product evidence, not generated concepts.
+The core smoke starts real Fastify HTTP with temporary SQLite and injected deterministic providers, and launches the real restricted Docker runner. Scenarios exercise authentication/security, exact imports/ranges/streaming, workspace CAS/order persistence, Pine fills/costs/equity/provenance/cancellation/deadline isolation, paper accounting/restart and replay cursor/account isolation. Behavior tests cover financial, authorization, confirmation and immutability boundaries. Real Binance/Coinbase HTTP and successive stream updates were separately exercised through the authenticated app. Actual development/production browser checks cover chart interaction, saved reload, source editing/indicators/diagnostics, Strategy Tester, paper trading and replay; screenshots are running-product evidence, not generated concepts.
 
 ## Integrations and simulation limits
 
