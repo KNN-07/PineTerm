@@ -19,6 +19,10 @@ import { MarketService } from './market/MarketService.js';
 import { createTransports } from './market/providers.js';
 import { registerMarketRoutes } from './market/routes.js';
 import { registerWorkspaceRoutes } from './workspaces/routes.js';
+import { PineService } from './pine/PineService.js';
+import { registerPineRoutes } from './pine/routes.js';
+import { ScriptService } from './scripts/ScriptService.js';
+import { registerScriptRoutes } from './scripts/routes.js';
 import './types.js';
 
 export interface BuildAppOptions {
@@ -46,7 +50,8 @@ export async function buildApp({ config, providers = {}, clock = Date.now }: Bui
   const events = new InvalidationHub(db, clock);
   let security: SecurityBoundary | undefined;
   let market: MarketService | undefined;
-  app.addHook('preClose', async () => { market?.close(); events.close(); });
+  let pine: PineService | undefined;
+  app.addHook('preClose', async () => { await pine?.close(); market?.close(); events.close(); });
   app.addHook('onClose', async () => {
     security?.dispose();
     secrets.dispose();
@@ -56,10 +61,13 @@ export async function buildApp({ config, providers = {}, clock = Date.now }: Bui
     security = await SecurityBoundary.create(config, db, clock);
     const transports = Object.keys(providers).length ? providers : createTransports(clock);
     market = new MarketService(db, transports, clock);
+    pine = new PineService(db, market, clock, events);
+    await pine.initialise();
+    const scripts = new ScriptService(db, clock, events);
     app.decorate('db', db);
     app.decorate('security', security);
     app.decorate('events', events);
-    app.decorate('services', { config, clock, providers: transports, secrets, market });
+    app.decorate('services', { config, clock, providers: transports, secrets, market, pine, scripts });
     app.decorateRequest('principal', null);
     installErrorHandling(app);
     for (const schema of sharedSchemas) app.addSchema(schema);
@@ -92,12 +100,15 @@ export async function buildApp({ config, providers = {}, clock = Date.now }: Bui
         app.security.authorize(request, request.routeOptions.config.security ?? { access: 'admin' });
         if (request.headers.upgrade?.toLowerCase() === 'websocket') app.security.assertOrigin(request);
       } else {
-        reply.header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+        // The pinned PineTS Blob worker evaluates compiled Pine; previews are not a security sandbox.
+        reply.header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
       }
     });
     registerRoutes(app, config);
     await registerMarketRoutes(app, market);
     await registerWorkspaceRoutes(app);
+    await registerPineRoutes(app);
+    await registerScriptRoutes(app);
     const hasWebBuild = existsSync(join(config.webDistDir, 'index.html'));
     if (config.mode === 'production' && !hasWebBuild) {
       throw new Error('Production web assets are missing. Run npm run build before npm start.');

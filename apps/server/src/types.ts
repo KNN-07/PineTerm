@@ -4,6 +4,8 @@ import type { InvalidationHub } from './events.js';
 import type { Principal, RouteSecurity, SecurityBoundary } from './security.js';
 import type { SecretStore } from './secrets.js';
 import type { MarketService } from './market/MarketService.js';
+import type { PineService } from './pine/PineService.js';
+import type { ScriptService } from './scripts/ScriptService.js';
 
 export interface ServerServices {
   config: Config;
@@ -11,6 +13,8 @@ export interface ServerServices {
   providers: Readonly<Record<string, unknown>>;
   secrets: SecretStore;
   market: MarketService;
+  pine: PineService;
+  scripts: ScriptService;
 }
 
 declare module 'fastify' {

@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { VelaWorkspace } from '@luxalgo/vela/workspace';
-import { PineWorkerEngine } from '@luxalgo/vela-pinets';
+import type { PineWorkerEngine } from '@luxalgo/vela-pinets';
 import type { ChartConfig } from '@luxalgo/vela';
 import type { ChartCell } from '@luxalgo/vela/workspace';
-import type { MarketRef } from '@pineterm/contracts';
+import type { MarketRef, ScriptRecord, ScriptRevision } from '@pineterm/contracts';
 import { TIMEFRAMES } from '@pineterm/contracts';
 import { ApiClient, ApiError, errorMessage } from '../../api.js';
 import { BackendMarketStream, PineTermProvider, feedKey, parseMarket } from './PineTermProvider.js';
 import type { FeedState } from './PineTermProvider.js';
 import { WorkspaceStorage } from './WorkspaceStorage.js';
+import '../scripts/chartPersistence.js';
+import { ProviderLockedPineWorkerEngine } from './ProviderLockedPineWorkerEngine.js';
 
 export interface ActiveChart { cellId: string; market: MarketRef | null; timeframe: string; priceStyle: string }
 export interface ChartWorkspaceProps {
@@ -18,7 +20,7 @@ export interface ChartWorkspaceProps {
   onReady: (workspace: VelaWorkspace | null) => void; onActiveChart: (chart: ActiveChart) => void;
 }
 
-/** Owns only Vela's lifecycle; future editor/replay modules use the live workspace seam. */
+/** Owns Vela's lifecycle; editor/replay modules use the live workspace seam. */
 export function ChartWorkspace({ client, storage, stream, feeds, onFeed, onSessionError, onReady, onActiveChart }: ChartWorkspaceProps) {
   const host = useRef<HTMLDivElement>(null);
   const [cells, setCells] = useState<ChartCell[]>([]);
@@ -43,7 +45,14 @@ export function ChartWorkspace({ client, storage, stream, feeds, onFeed, onSessi
         sync: { crosshair: true }, timeframes: [...TIMEFRAMES], timezone: 'Etc/UTC', live: true,
         persist: storage.key, storage,
         providers: Object.fromEntries(providers.map((provider) => [provider.provider, () => provider])),
-        engines: { pine: () => { const engine = new PineWorkerEngine(); workers.add(engine); pendingWorkers.push(engine); return engine; } },
+        engines: { pine: () => { const engine = new ProviderLockedPineWorkerEngine(providers); workers.add(engine); pendingWorkers.push(engine); return engine; } },
+        indicators: async () => {
+          const { scripts } = await client.request<{ scripts: ScriptRecord[] }>('/scripts');
+          return Promise.all(scripts.map(async (script) => {
+            const { revision } = await client.request<{ revision: ScriptRevision }>(`/scripts/${script.id}`);
+            return { name: script.name, script: revision.source, language: 'pine', enabled: false, category: 'PineTerm editable library' };
+          }));
+        },
         // Keep Vela's chart chrome, object tree, drawing tools, undo/redo and settings.
         topbar: { left: ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'undo-redo'], right: ['panels', 'screenshot'] },
       });
@@ -61,6 +70,8 @@ export function ChartWorkspace({ client, storage, stream, feeds, onFeed, onSessi
       callbacks.current.onActiveChart({ cellId: active.id, market: parseMarket(market.symbol), timeframe: market.timeframe ?? '60', priceStyle: config?.series.style ?? 'candles' });
       if (mobile.matches && workspace.maximizedCell !== active.id) workspace.maximizeCell(active.id);
     };
+    const capture = () => storage.set(storage.key, JSON.stringify(workspace.getState()));
+    const saveIndicatorChanges = () => queueMicrotask(capture);
     const bindCell = (id: string) => {
       const cell = workspace.cell(id);
       if (!cell) return;
@@ -75,6 +86,10 @@ export function ChartWorkspace({ client, storage, stream, feeds, onFeed, onSessi
           updateActive();
         }),
         cell.chart.on('indicator:error', ({ error }) => setDiagnostics((current) => ({ ...current, [id]: `Pine preview error: ${error.message}` }))),
+        cell.chart.on('indicator:inputs', saveIndicatorChanges),
+        cell.chart.on('indicator:visibility', saveIndicatorChanges),
+        cell.chart.on('indicator:moved', saveIndicatorChanges),
+        cell.chart.on('indicator:removed', saveIndicatorChanges),
         cell.chart.on('data:unresolved', ({ symbol }) => {
           const market = parseMarket(symbol);
           if (market) callbacks.current.onFeed({ market, timeframe: cell.chart.market.timeframe ?? '60', kind: 'unavailable', message: 'No registered backend provider can serve this instrument.', asOf: null, gaps: 0 });
@@ -101,10 +116,11 @@ export function ChartWorkspace({ client, storage, stream, feeds, onFeed, onSessi
     const resizeMobile = () => { workspace.maximizeCell(mobile.matches ? workspace.active.id : null); };
     mobile.addEventListener('change', resizeMobile);
     callbacks.current.onReady(workspace); resizeMobile(); updateActive();
-    const capture = () => storage.set(storage.key, JSON.stringify(workspace.getState()));
+    workspace.root.addEventListener('pineterm:pine-state', capture);
     window.addEventListener('pagehide', capture);
     return () => {
       capture();
+      workspace.root.removeEventListener('pineterm:pine-state', capture);
       window.removeEventListener('pagehide', capture); mobile.removeEventListener('change', resizeMobile);
       for (const stop of unbind) stop(); for (const listeners of cellListeners.values()) for (const stop of listeners) stop();
       workspace.destroy(); for (const worker of workers) worker.terminate(); for (const provider of providers) provider.dispose();

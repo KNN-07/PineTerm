@@ -163,6 +163,23 @@ export class MarketService {
     return { asOf, status, bars: selected, nextBefore: hasEarlier ? selected[0].time : null, gaps, ...(providerError ? { providerError } : {}) };
   }
 
+  /** Execution snapshots exclude mutable tails; only exchange-confirmed/cache or imported bars qualify. */
+  async getConfirmedBars(market: MarketRef, timeframe: string, range: BarRange = {}): Promise<BarPage> {
+    const page = await this.getBars(market, timeframe, range);
+    if (!page.bars.length) return page;
+    const cutoff = range.to ?? this.#clock();
+    const confirmed = new Set<number>();
+    if (market.provider !== 'csv') {
+      const rows = this.#db.prepare<[string, string, string, number, number], { time: number }>(
+        'SELECT time FROM bar_cache WHERE provider=? AND symbol=? AND timeframe=? AND time>=? AND time<?',
+      ).all(market.provider, market.symbol, timeframe, page.bars[0].time, nextBucket(page.bars.at(-1)!.time, timeframe));
+      for (const row of rows) confirmed.add(row.time);
+    }
+    const bars = page.bars.filter(bar => nextBucket(bar.time, timeframe) <= cutoff && (market.provider === 'csv' || confirmed.has(bar.time)));
+    const gaps = bars.length === page.bars.length ? page.gaps : findGaps(bars, timeframe, page.nextBefore === null ? range.from : page.bars[0].time, range.to);
+    return { ...page, bars, gaps };
+  }
+
   #recordGaps(market: MarketRef, timeframe: string, gaps: BarPage['gaps'], from?: number, to?: number): void {
     const now = this.#clock();
     this.#db.transaction(() => {

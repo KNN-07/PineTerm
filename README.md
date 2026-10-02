@@ -8,7 +8,7 @@ An original, single-user crypto-first terminal built around [Vela](https://githu
 
 ## Readiness
 
-Verified: administrator sessions and scoped API keys; transactional SQLite persistence; Binance/Coinbase OHLCV, quotes and streaming; historical CSV import/export; Vela chart layouts/drawings/settings; named saved workspaces and watchlists; OpenAPI and production serving; a nonroot isolated PineTS process. Durable script/backtest services, paper trading/replay, alerts, external execution and Pi UI are subsequent milestones and **not available yet**. No prices, portfolio gains, or model answers are seeded.
+Verified: administrator sessions/scoped keys; transactional SQLite persistence; Binance/Coinbase OHLCV, quotes and streaming; historical CSV import/export; Vela layouts/drawings/settings; named workspaces/watchlists; immutable Pine library, browser indicators and isolated reproducible strategy backtests; OpenAPI and production serving. Paper trading/replay, alerts, external execution and Pi UI are subsequent milestones and **not available yet**. No prices, portfolio gains, or model answers are seeded.
 
 ### Market data
 
@@ -31,6 +31,23 @@ At tablet widths, right/bottom docks become exclusive keyboard-accessible drawer
 Browser verification exercised real venue switching, trend-line drawing/persistence, `1 → 4 → 1` and eight-cell layouts, Heikin-Ashi, watchlist reordering, CSV/PNG downloads, historical CSV upload, mobile drawers/Escape, saved reload, and a real revision conflict with explicit recovery. Development and built production surfaces were both exercised. `npm run smoke:core -- --scenario workspace` exercises actual HTTP persistence/CAS/ordering; behavior tests also prove restart preservation.
 
 **Image-reference prerequisite:** the request to enable `generate_image.enabled` timed out unanswered in the configuration approval flow; the setting remained `false`. No generated desktop/mobile reference images exist, and no SVG mockups were substituted. The implemented UI follows the approved textual layout/palette; the screenshots above are actual running-product images.
+
+### Pine scripts and Strategy Tester
+
+CodeMirror provides Pine text editing, line numbers and search—not a complete Pine language server. The original editable library includes SMA, EMA, RSI, MACD, Bollinger Bands, volume and an EMA-crossover strategy. Save creates immutable source/parameter revisions; rename/archive never erase prior job provenance. Import/export `.pine`; input controls use variable/declaration IDs, not ambiguous display titles. Explicit overrides take precedence over source settings, then runtime defaults.
+
+**Add to chart** runs a browser preview in Vela’s per-cell PineWorkerEngine. Overlay/separate-pane, visibility/removal and workspace reload are supported through public Vela APIs. Browser workers provide responsiveness isolation, **not a security sandbox**: the pinned Blob worker needs CSP `unsafe-eval`. Script hosts remain restricted to `self`; do not run untrusted scripts merely because they use a worker. Browser previews may reflect synthetic chart styles and are never durable alert/order authority.
+
+The server only executes Pine in nonroot Docker containers: network disabled, read-only root, no capabilities/host mounts/socket/secrets, 512 MiB, one CPU, 64 PIDs. Compilation is limited to 10 seconds; whole execution to 60 seconds; two concurrent slots, bounded queue, 50,000 total primary/secondary bars and 20 secondary series. Missing Docker/image returns `503 RUNNER_UNAVAILABLE`; there is no API-process execution fallback. Cancellation/deadline cleanup confirms termination before settling.
+
+Backtests require an immutable saved strategy revision and an explicit UTC, aligned, half-open date range with complete confirmed raw candles. Gaps, missing confirmation, currency mismatch and excessive history reject instead of producing a shortened profit report. Results retain equity/drawdown, fills/fees, resolved settings, source/parameter/bar/metadata hashes and engine version. Export trades CSV; view fill markers and immutable provenance. Undefined metrics, including profit factor without losses, are `null`.
+
+**Provider-locked MTF:** selected explicitly after proving PineTS 0.10.0 strips computed exchange prefixes before its public provider seam. All secondary data remains within the run/chart’s selected venue; computed prefixes cannot select another venue. Validation/results disclose this limitation. This is not TradingView namespace parity. Higher-timeframe data is clipped to the allowed close cursor; the fixture returned no 00:05 value at cursor 00:04, then 14 at 00:05.
+
+PineTS also treats `currency.NONE` literally rather than resolving the instrument quote. Strategy currency must match quote currency exactly; USD is not USDT and no FX conversion is supplied. New strategy templates explicitly use the active quote currency, capital 10000, fixed quantity 1, commission 0.1%, slippage 0 and next-bar order processing. Existing/imported code retains its own settings.
+
+`npm run smoke:core -- --scenario pine` exercised real Docker/HTTP execution: six-bar round trip entry 10 / exit 14, fees 2, final equity 1002; one-tick slippage entry 10.01 / exit 13.99, final 1001.98; capital override 2000 → final 2001.98. Paginated/unpaginated orders/trades/equity matched. SMA override, duplicate input titles, malformed source, no-future MTF, immutable revision/archive provenance, cancellation, API responsiveness and the actual 60-second timeout were exercised. [Actual Strategy Tester screenshot](design/screenshots/pineterm-backtest.png) uses the explicitly imported deterministic historical fixture—not portfolio gains.
+
 
 ## Install and run
 
@@ -97,7 +114,7 @@ npm run runner:build
 npm run smoke:core
 ```
 
-The core smoke starts real Fastify HTTP on an ephemeral port and a temporary database; exercises login, foreign Origin/CSRF rejection, scoped token creation/revocation and logout; launches the pinned PineTS Docker process without network, writable root, capabilities, mounts or secrets. Its data scenario exercises CSV import/export, exact ranges/pagination, confirmed WebSocket closure and explicit stale failure. Behavior tests cover authorization escalation, schema/import rejection, decimal arithmetic and shared subscriptions/cache deduplication. Browser login/settings/About/reload were exercised in development and production at desktop/mobile sizes. The runner executed a Pine v6 `plot(close)` script from supplied bars and returned actual values 10 and 12; this is not yet end-to-end backtest acceptance.
+The core smoke starts real Fastify HTTP with temporary SQLite and injected deterministic providers, and launches the real restricted Docker runner. Scenarios exercise authentication/security, exact imports/ranges/streaming, workspace CAS/order persistence, and Pine fills/costs/equity/provenance/cancellation/deadline isolation. Behavior tests cover financial, authorization, confirmation and immutability boundaries. Real Binance/Coinbase HTTP and successive stream updates were separately exercised through the authenticated app. Actual development/production browser checks cover chart interaction, saved reload, source editing/indicators/diagnostics and Strategy Tester results; screenshots are running-product evidence, not generated concepts.
 
 ## Integrations and simulation limits
 

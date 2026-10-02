@@ -35,7 +35,7 @@ export function About({ client, onClose }: { client: ApiClient; onClose: () => v
   return (
     <Modal title="About PineTerm" titleId="about-title" onClose={onClose}>
       <p className="about-tagline">Your self-hosted charting and strategy workspace.</p>
-      <p>PineTerm is an original, single-user application with venue-qualified crypto charts, drawings, named workspaces/watchlists, historical CSV import/export and scoped API keys. Durable Pine execution, trading, alerts and agent analysis arrive in later milestones.</p>
+      <p>PineTerm is an original, single-user application with venue-qualified crypto charts, drawings, named workspaces/watchlists, historical CSV import/export, scoped API keys, an immutable Pine library and isolated strategy backtests. Trading, alerts and agent analysis arrive in later milestones.</p>
       <section aria-labelledby="source-title">
         <h3 id="source-title">License and source</h3>
         <p>Original PineTerm code is licensed <strong>AGPL-3.0-only</strong>. Corresponding source is available on <a href={revisionUrl} target="_blank" rel="noopener noreferrer">GitHub{metadata?.sourceRevision ? ' at the deployed revision' : ''}</a>.</p>
@@ -56,12 +56,12 @@ export function About({ client, onClose }: { client: ApiClient; onClose: () => v
       </section>
       <section aria-labelledby="attribution-title">
         <h3 id="attribution-title">Open-source attribution</h3>
-        <p>The chart workspace is powered by <a href="https://velacharts.dev" target="_blank" rel="noopener noreferrer">Vela by LuxAlgo</a> (Apache-2.0). PineTS and the Vela PineTS integration are AGPL-3.0. Browser worker previews provide responsiveness isolation, not a security sandbox; durable isolated execution arrives in milestone 4.</p>
+        <p>The chart workspace is powered by <a href="https://velacharts.dev" target="_blank" rel="noopener noreferrer">Vela by LuxAlgo</a> (Apache-2.0). PineTS and the Vela PineTS integration are AGPL-3.0. Browser worker previews need dynamic evaluation and provide responsiveness isolation, not a security sandbox; durable Pine execution runs in restricted Docker containers.</p>
         <p>Third-party license and notice files remain applicable. PineTerm is not affiliated with TradingView and does not claim feature or simulation parity.</p>
       </section>
       <section aria-labelledby="limits-title">
         <h3 id="limits-title">Data and execution boundaries</h3>
-        <p>No market prices, strategy results or portfolio gains are seeded. Synthetic chart styles do not change raw execution bars. Future PineTS results will be simulations, not promises of profit or TradingView-identical execution. Live executor handoff is not available or enabled.</p>
+        <p>No market prices, strategy results or portfolio gains are seeded. Synthetic chart styles do not change raw backtest bars. PineTS results are simulations, not promises of profit or TradingView-identical execution. Secondary data is locked to the selected venue because the pinned runtime loses computed ticker prefixes. Live executor handoff is not available or enabled.</p>
       </section>
     </Modal>
   );

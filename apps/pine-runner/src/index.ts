@@ -1,25 +1,80 @@
-import { createInterface } from 'node:readline';
-import { PineTS, Indicator } from 'pinets';
+import { format } from 'node:util';
+import type { PineDataResponse, PineRunRequest, PineValidateRequest } from '../../../packages/contracts/src/pine.js';
+import { compile, diagnostic, execute } from './execution.js';
+import { RunnerError, SnapshotProvider } from './provider.js';
+
+const MAX_BYTES = 20 * 1024 * 1024;
+const protocolWrite = process.stdout.write.bind(process.stdout);
+let outputBytes = 0;
+function send(message: unknown, terminal = false): void {
+  const frame = JSON.stringify(message, (_key, value) => typeof value === 'number' && !Number.isFinite(value) ? null : value) + '\n';
+  outputBytes += Buffer.byteLength(frame);
+  if (outputBytes > MAX_BYTES) throw new RunnerError('OUTPUT_BUDGET_EXCEEDED', 'Runner protocol output exceeds 20 MiB.');
+  if (terminal) protocolWrite(frame, () => process.exit(0));
+  else protocolWrite(frame);
+}
 
 if (process.argv.includes('--health')) {
-  console.log(JSON.stringify({ engine: 'PineTS', version: '0.10.0', isolated: true }));
-  process.exit(0);
-}
-const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
-for await (const line of input) {
-  try {
-    if (Buffer.byteLength(line) > 20 * 1024 * 1024) throw new Error('Runner input exceeds 20 MiB');
-    const job = JSON.parse(line);
-    if (job.type !== 'run' || typeof job.source !== 'string' || !/^\s*\/\/@version=[56]\b/.test(job.source)) throw new Error('Only Pine v5/v6 run commands are supported');
-    if (Buffer.byteLength(job.source) > 256 * 1024 || !Array.isArray(job.bars) || job.bars.length > 50000) throw new Error('Run budget exceeded');
-    const bars = job.bars.map((bar: {time: number; open: number; high: number; low: number; close: number; volume: number}, i: number) => ({ ...bar, openTime: bar.time, closeTime: job.bars[i + 1]?.time ?? job.to }));
-    const pine = new PineTS(bars, job.market?.symbol, job.timeframe, bars.length, job.from, job.to);
-    const indicator = new Indicator(job.source);
-    for (const [key, value] of Object.entries(job.inputs ?? {})) indicator.input[key] = value;
-    for (const [key, value] of Object.entries(job.props ?? {})) indicator.prop[key] = value;
-    const result = await pine.run(indicator);
-    console.log(JSON.stringify({ type: 'result', jobId: job.jobId, plots: result.plots }, (_key, value) => typeof value === 'number' && !Number.isFinite(value) ? null : value));
-  } catch (error) {
-    console.log(JSON.stringify({ type: 'error', error: { code: 'PINE_DIAGNOSTIC', message: error instanceof Error ? error.message : 'Pine run failed' } }));
-  }
+  send({ engine: 'PineTS', version: '0.10.0', isolated: true }, true);
+} else {
+  const logs: string[] = [];
+  let logBytes = 0;
+  const capture = (...values: unknown[]) => {
+    const text = format(...values).slice(0, 4096);
+    logBytes += Buffer.byteLength(text);
+    if (logBytes > 256 * 1024) throw new RunnerError('LOG_BUDGET_EXCEEDED', 'Pine log output exceeds 256 KiB.');
+    logs.push(text);
+  };
+  console.log = capture; console.info = capture; console.debug = capture; console.warn = capture; console.error = capture;
+  // Reserve stdout for NDJSON even if an upstream logger writes directly rather than through console.
+  process.stdout.write = ((chunk: unknown, encodingOrCallback?: unknown, callback?: unknown) => {
+    capture(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
+    const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+    if (typeof done === 'function') done();
+    return true;
+  }) as typeof process.stdout.write;
+  let jobId = '';
+  let started = false;
+  let finished = false;
+  let provider: SnapshotProvider | undefined;
+  let buffered: Buffer = Buffer.alloc(0);
+  const fail = (error: unknown) => {
+    if (finished) return;
+    finished = true;
+    try { send({ type: 'error', jobId, error: diagnostic(error) }, true); }
+    catch { protocolWrite(JSON.stringify({ type: 'error', jobId, error: { code: 'OUTPUT_BUDGET_EXCEEDED', message: 'Runner output budget exceeded.' } }) + '\n', () => process.exit(1)); }
+  };
+  process.on('uncaughtException', fail);
+  process.on('unhandledRejection', fail);
+  process.stdin.on('data', (chunk: Buffer) => {
+    if (finished) return;
+    if (buffered.length + chunk.length > MAX_BYTES) { fail(new RunnerError('INPUT_BUDGET_EXCEEDED', 'Runner input frame exceeds 20 MiB.')); return; }
+    buffered = buffered.length ? Buffer.concat([buffered, chunk]) : chunk;
+    let end: number;
+    while ((end = buffered.indexOf(10)) !== -1) {
+      const line = buffered.subarray(0, end).toString('utf8');
+      buffered = buffered.subarray(end + 1);
+      try {
+        const message = JSON.parse(line) as PineRunRequest | PineValidateRequest | PineDataResponse;
+        if (message.type === 'data_response') {
+          if (!provider || !started) throw new RunnerError('INVALID_PROTOCOL', 'Data response without a running job.');
+          provider.receive(message);
+          continue;
+        }
+        if (started || !['run', 'validate'].includes(message.type) || typeof message.jobId !== 'string' || !message.inputs || !message.props) throw new RunnerError('INVALID_PROTOCOL', 'One run or validate command is required.');
+        started = true;
+        jobId = message.jobId;
+        const { indicator, validation } = compile(message);
+        send({ type: 'compiled', jobId, validation }, message.type === 'validate');
+        if (message.type === 'validate') { finished = true; continue; }
+        provider = new SnapshotProvider(message, send);
+        void execute(message, indicator, validation, provider, logs).then((result) => {
+          if (finished) return;
+          send({ type: 'result', jobId, result }, true);
+          finished = true;
+        }).catch(fail);
+      } catch (error) { fail(error); break; }
+    }
+  });
+  process.stdin.on('end', () => { if (!started || buffered.length) fail(new RunnerError('INVALID_PROTOCOL', 'Runner input ended without a complete command.')); });
 }

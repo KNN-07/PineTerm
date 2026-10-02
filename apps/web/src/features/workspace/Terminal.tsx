@@ -11,6 +11,7 @@ import { DEFAULT_VELA_STATE, WorkspaceStorage } from './WorkspaceStorage.js';
 import type { StorageSnapshot } from './WorkspaceStorage.js';
 import { Watchlists } from './Watchlists.js';
 import { DataSettings } from './DataSettings.js';
+import { ScriptsDock } from '../scripts/ScriptsDock.js';
 
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -47,6 +48,7 @@ export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurit
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const workspaceRef = useRef<VelaWorkspace | null>(null);
+  const [pineWorkspace, setPineWorkspace] = useState<VelaWorkspace | null>(null);
   const storageRef = useRef<WorkspaceStorage | null>(null);
   storageRef.current = storage;
   const bootstrap = useRef<Promise<Workspace[]> | null>(null);
@@ -65,7 +67,7 @@ export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurit
       setLinks({ crosshair: !!workspace.sync.get('crosshair'), symbol: !!workspace.sync.get('symbol'), timeframe: !!workspace.sync.get('timeframe'), viewport: !!workspace.sync.get('viewport') });
     }
   }, []);
-  const onReady = useCallback((workspace: VelaWorkspace | null) => { workspaceRef.current = workspace; if (workspace) setLayout(workspace.layout.id); }, []);
+  const onReady = useCallback((workspace: VelaWorkspace | null) => { workspaceRef.current = workspace; setPineWorkspace(workspace); if (workspace) setLayout(workspace.layout.id); }, []);
 
   useEffect(() => {
     let alive = true;
@@ -311,7 +313,10 @@ export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurit
       <section className={`bottom-dock dock ${drawer === 'bottom' ? 'is-open' : ''}`} ref={(element) => { if (drawer === 'bottom') dockRef.current = element; }} role={compact && drawer === 'bottom' ? 'dialog' : undefined} aria-modal={compact && drawer === 'bottom' ? true : undefined} aria-label="Pine editor, strategy tester and trading">
         <div className={`bottom-resizer ${resizing ? 'is-resizing' : ''}`} role="separator" tabIndex={0} aria-label="Resize bottom dock" aria-orientation="horizontal" aria-valuemin={120} aria-valuemax={500} aria-valuenow={Math.round(ui.bottomHeight)} onPointerDown={resizePointer} onKeyDown={resizeKeyboard} />
         <div className="dock-tabs" role="tablist" aria-label="Bottom dock">{(['editor', 'tester', 'trading'] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={ui.bottomTab === tab} onClick={() => updateUi({ bottomTab: tab })}>{BOTTOM_LABELS[tab]}</button>)}<span className="dock-context">{active.market ? qualifiedMarket(active.market) : 'No instrument'} · {active.timeframe}</span><button type="button" className="dock-close" onClick={() => { setDrawer(null); drawerOrigin.current?.focus(); }}>Close</button></div>
-        <div className="dock-content" role="tabpanel"><section className="unavailable-feature"><span className="eyebrow">Not yet available</span><h2>{BOTTOM_LABELS[ui.bottomTab]}</h2><p>{ui.bottomTab === 'editor' ? 'Saved Pine scripts and the editable library arrive in milestone 4. Vela’s chart tools and native volume are available now; this pane does not pretend to run an editor.' : ui.bottomTab === 'tester' ? 'No backtest results. Isolated PineTS strategy simulation and reproducible result provenance arrive in milestone 4.' : 'Paper accounts and server-authoritative replay arrive in milestone 5. No orders, balances or portfolio gains are fabricated. Live executor handoff is disabled.'}</p><div className="feature-boundaries"><span>Venue-qualified data</span><span>Raw bars remain authoritative</span><span>Execution disabled</span></div></section></div>
+        <div className="dock-content" role="tabpanel">
+          <ScriptsDock client={client} workspace={pineWorkspace} active={active} tab={ui.bottomTab} onTab={(bottomTab) => updateUi({ bottomTab })} onSessionError={onSessionError} />
+          {ui.bottomTab === 'trading' && <section className="unavailable-feature"><span className="eyebrow">Not yet available</span><h2>Trading</h2><p>Paper accounts and server-authoritative replay arrive in milestone 5. No orders, balances or portfolio gains are fabricated. Live executor handoff is disabled.</p><div className="feature-boundaries"><span>Venue-qualified data</span><span>Raw bars remain authoritative</span><span>Execution disabled</span></div></section>}
+        </div>
       </section>
     </div>
     <div className="terminal-status" role="status"><span className={`connection-state ${feed?.kind === 'live' ? 'positive' : feed?.kind === 'unavailable' ? 'negative' : 'muted'}`}>● {feed?.kind ?? 'Connecting'}</span><span>{active.market ? qualifiedMarket(active.market) : 'No instrument'} · {active.timeframe}</span><span title={feed?.message}>{feed?.asOf ? `Observed ${new Date(feed.asOf).toLocaleTimeString()}` : feed?.message ?? 'Awaiting authoritative data'}{feed?.gaps ? ` · ${feed.gaps} data gaps` : ''}</span><span>{saved?.status ?? 'Unsaved'} · live handoff disabled</span></div>

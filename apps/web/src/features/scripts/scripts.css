@@ -1,0 +1,56 @@
+.scripts-dock { height: 100%; min-height: 0; }
+.scripts-dock [hidden] { display: none !important; }
+.pine-editor-panel, .strategy-tester { min-width: 0; }
+.pine-toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 6px 8px; border-bottom: 1px solid #253247; }
+.pine-toolbar label { display: flex; gap: 5px; align-items: center; font-size: 11px; color: #A1AFC4; }
+.pine-toolbar input, .pine-toolbar select { max-width: 230px; min-width: 70px; }
+.pine-toolbar button { white-space: nowrap; }
+.pine-toolbar code, .pine-setting code, .pine-handle code { font-size: 10px; color: #A1AFC4; overflow-wrap: anywhere; }
+.pine-import input { width: 155px; font-size: 11px; }
+.pine-editor-grid { display: grid; grid-template-columns: minmax(250px, 1fr) minmax(250px, 340px); min-height: 150px; }
+.pine-code { min-width: 0; height: 240px; overflow: hidden; }
+.pine-inspector { border-left: 1px solid #253247; padding: 8px; max-height: 320px; overflow: auto; }
+.pine-inspector details, .strategy-tester details { margin-bottom: 8px; }
+.pine-inspector summary, .strategy-tester summary { cursor: pointer; padding: 4px 0; }
+.pine-settings p { font-size: 11px; line-height: 1.5; color: #A1AFC4; }
+.pine-settings fieldset { margin: 6px 0; border: 1px solid #253247; }
+.pine-setting { display: grid; gap: 4px; margin: 6px 0 10px; }
+.pine-setting small { overflow-wrap: anywhere; color: #A1AFC4; }
+.pine-override { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.pine-override input { width: auto; }
+.pine-handle { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid #253247; }
+.pine-handle strong { flex-basis: 100%; }
+.pine-handle code { flex-basis: 100%; }
+.pine-diagnostic, .pine-notice { padding: 5px 8px; margin: 4px 0; overflow-wrap: anywhere; }
+.pine-diagnostic { color: #FB7185; background: #311b25; }
+.pine-diagnostic button { margin: 4px 8px; }
+.pine-notice { color: #2DD4BF; }
+.pine-inspector pre, .strategy-tester pre { margin: 4px 0; overflow: auto; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.strategy-tester { padding: 4px 8px 12px; }
+.strategy-range { display: flex; align-items: end; gap: 7px; flex-wrap: wrap; padding: 6px 0; }
+.strategy-range label { display: grid; gap: 4px; color: #A1AFC4; font-size: 11px; }
+.strategy-tester p { font-size: 11px; line-height: 1.5; margin: 6px 0; }
+.pine-limitations { border-left: 2px solid #A1AFC4; padding: 6px 8px; background: #182233; color: #A1AFC4; }
+.strategy-metrics { display: flex; gap: 14px; flex-wrap: wrap; margin: 8px 0; }
+.strategy-metrics div { min-width: 115px; }
+.strategy-metrics dt { color: #A1AFC4; font-size: 11px; }
+.strategy-metrics dd { margin: 4px 0 0; font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+.strategy-curves { display: grid; grid-template-columns: repeat(2, minmax(250px, 1fr)); gap: 10px; }
+.strategy-curve { margin: 6px 0; }
+.strategy-curve figcaption { font-size: 11px; color: #A1AFC4; }
+.strategy-curve svg { display: block; width: 100%; min-height: 100px; }
+.strategy-curve text { font-size: 10px; fill: #A1AFC4; }
+.strategy-trades { overflow: auto; }
+.strategy-trades table { border-collapse: collapse; white-space: nowrap; width: 100%; font-size: 11px; }
+.strategy-trades caption { text-align: left; padding: 6px 0; color: #A1AFC4; }
+.strategy-trades th { text-align: left; color: #A1AFC4; font-weight: 500; }
+.strategy-trades th, .strategy-trades td { padding: 5px 8px; border-bottom: 1px solid #253247; }
+.strategy-trades small { display: block; color: #A1AFC4; }
+@media (max-width: 900px) {
+  .pine-editor-grid, .strategy-curves { grid-template-columns: minmax(0, 1fr); }
+  .pine-inspector { border-left: 0; border-top: 1px solid #253247; max-height: none; }
+  .pine-code { height: 260px; }
+  .pine-toolbar label { flex-wrap: wrap; }
+  .pine-toolbar input, .pine-toolbar select { max-width: 100%; }
+  .pine-toolbar { align-items: stretch; }
+}

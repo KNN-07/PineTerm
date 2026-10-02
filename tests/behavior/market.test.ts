@@ -89,4 +89,15 @@ describe('authoritative market history', () => {
     unsubscribeB();
     expect(coinbase.listeners.size).toBe(0);
   });
+  it('never confirms an exchange tail from wall clock or exposes a future completed higher-timeframe bar', async () => {
+    const { service } = await marketService();
+    const native = await service.getConfirmedBars({ provider: 'coinbase', symbol: 'BTC-USD' }, '1', { from: FIXTURE_START, to: FIXTURE_START + 360000 });
+    expect(native.bars).toEqual(FIXTURE_BARS.slice(0, 5));
+    expect(native.gaps).toContainEqual({ from: FIXTURE_START + 300000, to: FIXTURE_START + 360000 });
+    const dataset = service.importDataset(metadata, FIXTURE_CSV);
+    const market = { provider: 'csv' as const, symbol: dataset.id };
+    expect((await service.getConfirmedBars(market, '5', { from: FIXTURE_START, to: FIXTURE_START + 240000 })).bars).toEqual([]);
+    const closed = await service.getConfirmedBars(market, '5', { from: FIXTURE_START, to: FIXTURE_START + 300000 });
+    expect(closed.bars).toEqual([{ time: FIXTURE_START, open: 10, high: 15, low: 9, close: 14, volume: 5 }]);
+  });
 });
