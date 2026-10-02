@@ -228,7 +228,7 @@ export class MarketService {
     if (cached?.status === 'live' && this.#clock() - cached.observedAt <= 30_000) return cached;
     try {
       const quote = await this.#transports[market.provider].getQuote(market.symbol);
-      if (!financialDecimal(quote.price).isPositive() || !Number.isSafeInteger(quote.observedAt) || quote.market.provider !== market.provider || quote.market.symbol !== market.symbol) throw new ApiError(503, 'INVALID_PROVIDER_DATA', 'The provider returned an invalid quote.');
+      if (!financialDecimal(quote.price).gt(0) || !Number.isSafeInteger(quote.observedAt) || quote.market.provider !== market.provider || quote.market.symbol !== market.symbol) throw new ApiError(503, 'INVALID_PROVIDER_DATA', 'The provider returned an invalid quote.');
       const observed = { ...quote, status: this.#clock() - quote.observedAt > 30_000 ? 'stale' as const : quote.status };
       this.#quotes.set(key, observed);
       return observed;

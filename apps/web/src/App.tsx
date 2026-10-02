@@ -5,6 +5,8 @@ import { ApiClient, ApiError, errorMessage } from './api.js';
 import { SecuritySettings } from './SecuritySettings.js';
 import { Terminal } from './features/workspace/Terminal.js';
 import { IntegrationSettings } from './features/alerts/IntegrationSettings.js';
+import { ExecutionProvider, ExecutionStatus } from './features/execution/ExecutionContext.js';
+import { ExecutionSettings } from './features/execution/ExecutionSettings.js';
 
 type SessionState = 'checking' | 'signed-out' | 'signed-in' | 'unavailable';
 
@@ -16,7 +18,7 @@ export function App() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [panel, setPanel] = useState<'data' | 'security' | 'notifications' | 'about' | null>(null);
+  const [panel, setPanel] = useState<'data' | 'security' | 'notifications' | 'execution' | 'about' | null>(null);
   const loginInput = useRef<HTMLInputElement>(null);
   const settingsButton = useRef<HTMLButtonElement>(null);
   const aboutButton = useRef<HTMLButtonElement>(null);
@@ -86,11 +88,12 @@ export function App() {
   function closePanel() {
     const previous = panel;
     setPanel(null);
-    if (previous === 'security' || previous === 'data' || previous === 'notifications') settingsButton.current?.focus();
+    if (previous === 'security' || previous === 'data' || previous === 'notifications' || previous === 'execution') settingsButton.current?.focus();
     else aboutButton.current?.focus();
   }
 
   return (
+    <ExecutionProvider client={client} enabled={sessionState === 'signed-in'} onSessionExpired={onSessionExpired}>
     <div className={`app-shell ${sessionState === 'signed-in' ? 'signed-in-shell' : ''}`}>
       <a className="skip-link" href="#main-content">Skip to content</a>
       <header className="app-header">
@@ -99,6 +102,7 @@ export function App() {
           <strong>PineTerm</strong>
           <span className="milestone-label" role="status">{sessionState === 'signed-in' ? connection : 'Self-hosted terminal'}</span>
         </div>
+        {sessionState === 'signed-in' && <ExecutionStatus compact onOpenExecution={() => setPanel('execution')} />}
         <nav aria-label="Application">
           {sessionState === 'signed-in' && <button type="button" ref={settingsButton} onClick={() => setPanel('data')}>Settings</button>}
           <button type="button" ref={aboutButton} onClick={() => setPanel('about')}>About</button>
@@ -135,16 +139,18 @@ export function App() {
             </form>
           </section>
         )}
-        {sessionState === 'signed-in' && <Terminal client={client} onSessionExpired={onSessionExpired} onConnection={setConnection} settingsOpen={panel === 'data'} onCloseSettings={closePanel} onOpenSecurity={() => setPanel('security')} onOpenNotifications={() => setPanel('notifications')} />}
+        {sessionState === 'signed-in' && <Terminal client={client} onSessionExpired={onSessionExpired} onConnection={setConnection} settingsOpen={panel === 'data'} onCloseSettings={closePanel} onOpenSecurity={() => setPanel('security')} onOpenNotifications={() => setPanel('notifications')} onOpenExecution={() => setPanel('execution')} />}
       </main>
       <footer className="app-footer">
         <span>PineTerm · AGPL-3.0-only</span>
         <span>Charts by <a href="https://velacharts.dev" target="_blank" rel="noopener noreferrer">Vela by LuxAlgo</a></span>
-        <span>Venue-qualified data · live handoff disabled</span>
+        <span>Venue-qualified data · operator-driven external execution</span>
       </footer>
-      {panel === 'security' && sessionState === 'signed-in' && <SecuritySettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => setPanel('data')} onOpenNotifications={() => setPanel('notifications')} />}
-      {panel === 'notifications' && sessionState === 'signed-in' && <IntegrationSettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => setPanel('data')} onOpenSecurity={() => setPanel('security')} />}
+      {panel === 'security' && sessionState === 'signed-in' && <SecuritySettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => setPanel('data')} onOpenNotifications={() => setPanel('notifications')} onOpenExecution={() => setPanel('execution')} />}
+      {panel === 'notifications' && sessionState === 'signed-in' && <IntegrationSettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => setPanel('data')} onOpenSecurity={() => setPanel('security')} onOpenExecution={() => setPanel('execution')} />}
+      {panel === 'execution' && sessionState === 'signed-in' && <ExecutionSettings onClose={closePanel} onOpenData={() => setPanel('data')} onOpenSecurity={() => setPanel('security')} onOpenNotifications={() => setPanel('notifications')} />}
       {panel === 'about' && <About client={client} onClose={closePanel} />}
     </div>
+    </ExecutionProvider>
   );
 }

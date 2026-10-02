@@ -10,6 +10,7 @@ import type { PaperService } from './paper/PaperService.js';
 import type { ReplayService } from './replay/ReplayService.js';
 import type { AlertService } from './alerts/AlertService.js';
 import type { NotificationService } from './notifications/NotificationService.js';
+import type { ExecutionService } from './execution/ExecutionService.js';
 
 export interface ServerServices {
   config: Config;
@@ -23,6 +24,7 @@ export interface ServerServices {
   replay: ReplayService;
   alerts: AlertService;
   notifications: NotificationService;
+  execution: ExecutionService;
 }
 
 declare module 'fastify' {

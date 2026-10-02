@@ -5,9 +5,11 @@ import type { AlertCommand, AlertDefinition, AlertDestination, AlertLeaf, Market
 import { ApiClient, ApiError, errorMessage } from '../../api.js';
 import { Modal } from '../../Modal.js';
 import './alerts.css';
+import { useExecution } from '../execution/ExecutionContext.js';
+import { draftFromLiveAction, emptyLiveAction, LiveActionFields, liveActionFromDraft } from '../execution/LiveActionFields.js';
 
 export function commandFromAlert(alert: AlertDefinition): AlertCommand {
-  return { name: alert.name, market: alert.market, timeframe: alert.timeframe, mode: alert.mode, frequency: alert.frequency, enabled: alert.enabled, condition: alert.condition, destinations: alert.destinations, ...(alert.scriptRevisionId ? { scriptRevisionId: alert.scriptRevisionId, inputs: alert.inputs ?? {} } : {}), ...(alert.warmupFrom !== null ? { warmupFrom: alert.warmupFrom } : {}) };
+  return { name: alert.name, market: alert.market, timeframe: alert.timeframe, mode: alert.mode, frequency: alert.frequency, enabled: alert.enabled, condition: alert.condition, destinations: alert.destinations, ...(alert.liveAction ? { liveAction: alert.liveAction } : {}), ...(alert.scriptRevisionId ? { scriptRevisionId: alert.scriptRevisionId, inputs: alert.inputs ?? {} } : {}), ...(alert.warmupFrom !== null ? { warmupFrom: alert.warmupFrom } : {}) };
 }
 const PRICE_RULE: AlertLeaf = { kind: 'price', operator: 'crosses_above', price: '' };
 const destinationKey = (value: AlertDestination) => value.kind === 'webhook' ? `webhook:${value.id}` : `telegram:${value.chatId}`;
@@ -31,6 +33,9 @@ export function AlertEditor({ client, initial, market, timeframe, webhooks, tele
   client: ApiClient; initial: AlertDefinition | null; market: MarketRef | null; timeframe: string; webhooks: WebhookConfig[]; telegram: TelegramConfig;
   onClose: () => void; onSaved: (alert: AlertDefinition) => void; onSessionError: (error: ApiError) => void;
 }) {
+  const { executors, policy, error: executionError, refresh: refreshExecution } = useExecution();
+  const [hasLiveAction, setHasLiveAction] = useState(!!initial?.liveAction);
+  const [liveDraft, setLiveDraft] = useState(() => initial?.liveAction ? draftFromLiveAction(initial.liveAction) : emptyLiveAction());
   const [draft, setDraft] = useState<AlertCommand>(() => initial ? commandFromAlert(initial) : { name: '', market: market ?? { provider: 'coinbase', symbol: 'BTC-USD' }, timeframe, mode: 'bar-close', frequency: 'once_per_bar', enabled: true, condition: PRICE_RULE, destinations: [] });
   const [leaves, setLeaves] = useState<AlertLeaf[]>(() => initial ? initial.condition.kind === 'group' ? initial.condition.conditions : [initial.condition] : [PRICE_RULE]);
   const [group, setGroup] = useState<'single' | 'all' | 'any'>(() => initial?.condition.kind === 'group' ? initial.condition.operator : 'single');
@@ -129,8 +134,15 @@ export function AlertEditor({ client, initial, market, timeframe, webhooks, tele
     if (leaves.some((leaf) => leaf.kind === 'pine' && leaf.eventType === 'alertcondition' && !leaf.title?.trim())) { setError('Each alertcondition rule requires its exact declared title.'); return; }
     if (hasPine && !draft.scriptRevisionId) { setError('Select one immutable script revision shared by all Pine conditions.'); return; }
     if (warmup !== '' && (!/^\d+$/.test(warmup) || !Number.isSafeInteger(Number(warmup)))) { setError('Warm-up start must be a UTC epoch-millisecond integer.'); return; }
+    let liveAction: AlertCommand['liveAction'];
+    if (hasLiveAction) {
+      try {
+        liveAction = liveActionFromDraft(liveDraft);
+        if (!executors.some((executor) => executor.id === liveAction!.executorId && executor.archivedAt === null)) throw new Error('Choose a currently registered, non-archived executor for the fixed action.');
+      } catch (failure) { setError(errorMessage(failure)); return; }
+    }
     const normalized = leaves.map((leaf): AlertLeaf => leaf.kind === 'price' ? { ...leaf, price: leaf.price.trim() } : leaf.eventType === 'alertcondition' ? { ...leaf, title: leaf.title!.trim() } : { kind: 'pine', eventType: 'alert' });
-    const body: AlertCommand = { name: draft.name.trim(), market: { ...draft.market, symbol: draft.market.symbol.trim() }, timeframe: draft.timeframe, mode: draft.mode, frequency: draft.frequency, enabled: draft.enabled, condition: group === 'single' ? normalized[0]! : { kind: 'group', operator: group, conditions: normalized }, destinations: draft.destinations, ...(hasPine ? { scriptRevisionId: draft.scriptRevisionId!, inputs: draft.inputs ?? {} } : {}), ...(warmup !== '' ? { warmupFrom: Number(warmup) } : {}) };
+    const body: AlertCommand = { name: draft.name.trim(), market: { ...draft.market, symbol: draft.market.symbol.trim() }, timeframe: draft.timeframe, mode: draft.mode, frequency: draft.frequency, enabled: draft.enabled, condition: group === 'single' ? normalized[0]! : { kind: 'group', operator: group, conditions: normalized }, destinations: draft.destinations, ...(liveAction ? { liveAction } : {}), ...(hasPine ? { scriptRevisionId: draft.scriptRevisionId!, inputs: draft.inputs ?? {} } : {}), ...(warmup !== '' ? { warmupFrom: Number(warmup) } : {}) };
     const controller = new AbortController(); operation.current = controller; setBusy(true);
     try {
       const { alert } = await client.request<{ alert: AlertDefinition }>(initial ? `/alerts/${encodeURIComponent(initial.id)}` : '/alerts', { method: initial ? 'PUT' : 'POST', csrf: true, signal: controller.signal, body: initial ? { ...body, revision: initial.revision } : body });
@@ -171,6 +183,16 @@ export function AlertEditor({ client, initial, market, timeframe, webhooks, tele
           {Object.keys(draft.inputs ?? {}).length > 0 && <details><summary>Submitted varID input overrides</summary><pre>{JSON.stringify(draft.inputs, null, 2)}</pre></details>}
         </section>}
         <section><h3>Fixed warm-up baseline</h3><div className="form-field"><label htmlFor="alert-warmup">Optional start · UTC epoch milliseconds</label><input id="alert-warmup" value={warmup} inputMode="numeric" pattern="[0-9]+" onChange={(event) => setWarmup(event.target.value)} /><small>Blank on first arm selects the last 500 confirmed bars and stores that start. It never rolls forward silently. An explicit earlier start may hit history/compute limits; the server pauses with an actionable reason. Preserve the stored value when re-arming unless you intentionally change it.</small></div></section>
+        <section className="fixed-live-action"><h3>Optional fixed autonomous execution action</h3>
+          <label className="alert-checkbox"><input type="checkbox" checked={hasLiveAction} onChange={(event) => setHasLiveAction(event.target.checked)} />Attach an explicitly fixed live handoff action</label>
+          <p className="readiness-note">When an administrator enables live execution policy, fresh matching signals can queue this fixed action without per-order approval. You can stage it safely while policy is off. Pine alert messages are never parsed as orders. Tests and missed intervals never create execution actions; failed/stale signals are not retried after enabling.</p>
+          {hasLiveAction && <><p>Current handoff policy: <strong>{executionError ? 'unavailable · refresh before relying on status' : policy?.enabled ? 'ENABLED · autonomous handoff active' : policy ? 'disabled · action staged only' : 'checking'}</strong>. Pausing notifications does NOT pause this execution action. Pause the alert or use the execution kill switch.</p>
+            {executionError && <p className="message error" role="alert">{executionError}</p>}
+            <LiveActionFields id="alert-live-action" draft={liveDraft} onChange={setLiveDraft} executors={executors} />
+            <button type="button" onClick={refreshExecution}>Refresh registered executors / policy</button>
+            <small>Action market is an independently explicit live venue, never replay data or a client price. The server rechecks fresh quote, expiry, allowlist and currency budgets for every signal.</small>
+          </>}
+        </section>
         <section><h3>Notification destinations</h3><p className="muted">No destination means history only. Tests send labelled notifications to these explicit destinations and never simulate a condition.</p>
           {webhooks.map((webhook) => { const destination: AlertDestination = { kind: 'webhook', id: webhook.id }; return <label className="alert-checkbox" key={destinationKey(destination)}><input type="checkbox" checked={draft.destinations.some((item) => destinationKey(item) === destinationKey(destination))} onChange={(event) => toggleDestination(destination, event.target.checked)} />Webhook · {webhook.name}</label>; })}
           {telegram.allowedChatIds.map((chatId) => { const destination: AlertDestination = { kind: 'telegram', chatId }; return <label className="alert-checkbox" key={destinationKey(destination)}><input type="checkbox" checked={draft.destinations.some((item) => destinationKey(item) === destinationKey(destination))} onChange={(event) => toggleDestination(destination, event.target.checked)} />Telegram · chat {chatId}{!telegram.configured || !telegram.enabled ? ' · not currently enabled/configured' : ''}</label>; })}

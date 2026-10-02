@@ -493,6 +493,36 @@ const migrations: readonly Migration[] = [
       CREATE INDEX alert_events_history ON alert_events(alert_id, created_at, id);
     `,
   },
+  {
+    version: 7,
+    name: 'durable_scoped_execution_handoff',
+    sql: `
+      ALTER TABLE live_intents ADD COLUMN encrypted_lease_token TEXT;
+      ALTER TABLE live_intents ADD COLUMN reference_observed_at INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE live_intents ADD COLUMN source_event_id TEXT REFERENCES alert_events(id) ON DELETE RESTRICT;
+      ALTER TABLE live_intents ADD COLUMN min_execution_price TEXT;
+      ALTER TABLE live_intents ADD COLUMN max_execution_price TEXT;
+      ALTER TABLE live_intents ADD COLUMN quantity_step TEXT NOT NULL DEFAULT '1';
+      ALTER TABLE live_intents ADD COLUMN tick_size TEXT NOT NULL DEFAULT '0.01';
+      ALTER TABLE risk_reservations ADD COLUMN unit_risk_price TEXT NOT NULL DEFAULT '0';
+      ALTER TABLE risk_reservations ADD COLUMN submitted_at INTEGER;
+      ALTER TABLE executor_reports ADD COLUMN response_json TEXT CHECK(response_json IS NULL OR json_valid(response_json));
+      CREATE UNIQUE INDEX live_intents_source_event ON live_intents(source_event_id) WHERE source_event_id IS NOT NULL;
+      CREATE TABLE alert_live_actions (
+        event_id TEXT PRIMARY KEY REFERENCES alert_events(id) ON DELETE RESTRICT,
+        action_json TEXT NOT NULL CHECK(json_valid(action_json)),
+        state TEXT NOT NULL CHECK(state IN ('pending', 'created', 'failed')),
+        intent_id TEXT REFERENCES live_intents(id) ON DELETE RESTRICT,
+        error_code TEXT,
+        error_message TEXT,
+        created_at INTEGER NOT NULL,
+        completed_at INTEGER
+      ) STRICT;
+      CREATE INDEX alert_live_actions_pending ON alert_live_actions(state, created_at);
+      CREATE INDEX executor_fills_intent ON executor_fills(intent_id);
+      CREATE INDEX execution_audit_history ON execution_audit(created_at, id);
+    `,
+  },
 ];
 
 export function openDatabase(dataDir: string, clock: () => number): AppDatabase {

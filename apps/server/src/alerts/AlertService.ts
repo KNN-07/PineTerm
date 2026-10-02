@@ -13,6 +13,7 @@ import type { PineService } from '../pine/PineService.js';
 import { PineRunnerError } from '../pine/DockerRunner.js';
 import type { ScriptService } from '../scripts/ScriptService.js';
 import type { NotificationService } from '../notifications/NotificationService.js';
+import type { ExecutionService } from '../execution/ExecutionService.js';
 
 interface EvaluationState {
   previousPrice: string | null;
@@ -61,7 +62,7 @@ export class AlertService {
   readonly #runtimes = new Map<string, Runtime>();
   readonly #tasks = new Set<Promise<void>>();
   #closed = false;
-  constructor(private readonly db: AppDatabase, private readonly market: MarketService, private readonly pine: PineService, private readonly scripts: ScriptService, private readonly notifications: NotificationService, private readonly clock: () => number, private readonly events: InvalidationHub) {}
+  constructor(private readonly db: AppDatabase, private readonly market: MarketService, private readonly pine: PineService, private readonly scripts: ScriptService, private readonly notifications: NotificationService, private readonly clock: () => number, private readonly events: InvalidationHub, private readonly execution: ExecutionService) {}
 
   async initialise(): Promise<void> {
     for (const row of this.db.prepare<[], AlertRow>('SELECT * FROM alerts WHERE enabled=1 AND archived_at IS NULL').all()) this.#start(row, true);
@@ -87,7 +88,8 @@ export class AlertService {
     if (alertId) this.#row(alertId, true);
     return this.db.prepare<[string | null, string | null], EventRow>('SELECT payload_json,alert_revision,created_at FROM alert_events WHERE (? IS NULL OR alert_id=?) ORDER BY occurred_at DESC,created_at DESC,id DESC').all(alertId ?? null, alertId ?? null).map(row => {
       const payload = JSON.parse(row.payload_json) as AlertEvent;
-      return { ...payload, alertRevision: row.alert_revision, createdAt: row.created_at, deliveries: this.notifications.listDeliveries(payload.eventId) };
+      const liveAction = this.execution.getAlertAction(payload.eventId);
+      return { ...payload, alertRevision: row.alert_revision, createdAt: row.created_at, deliveries: this.notifications.listDeliveries(payload.eventId), ...(liveAction ? { liveAction } : {}) };
     });
   }
   async #validate(body: AlertCommand): Promise<AlertCommand> {
@@ -97,7 +99,7 @@ export class AlertService {
     const selected = leaves(body.condition);
     if (!selected.length || selected.length > 20 || selected.some(leaf => leaf.kind !== 'price' && leaf.kind !== 'pine')) throw new ApiError(400, 'INVALID_ALERT_GROUP', 'Use 1–20 flat price/Pine conditions.');
     for (const leaf of selected) {
-      if (leaf.kind === 'price' && !financialDecimal(leaf.price).isPositive()) throw new ApiError(400, 'INVALID_ALERT_PRICE', 'Alert prices must be positive decimal strings.');
+      if (leaf.kind === 'price' && !financialDecimal(leaf.price).gt(0)) throw new ApiError(400, 'INVALID_ALERT_PRICE', 'Alert prices must be positive decimal strings.');
       if (leaf.kind === 'pine' && leaf.eventType === 'alertcondition' && !leaf.title?.trim()) throw new ApiError(400, 'ALERT_TITLE_REQUIRED', 'Select the exact named alertcondition title.');
       if (leaf.kind === 'pine' && leaf.eventType === 'alert' && leaf.title !== undefined) throw new ApiError(400, 'INVALID_ALERT_TITLE', 'alert() does not have a named title.');
     }
@@ -108,6 +110,7 @@ export class AlertService {
     } else if (body.scriptRevisionId !== undefined || body.inputs !== undefined) throw new ApiError(400, 'UNUSED_PINE_PARAMETERS', 'Price-only alerts cannot carry unused Pine revision/inputs.');
     if (body.warmupFrom !== undefined && (!Number.isSafeInteger(body.warmupFrom) || body.warmupFrom < 0 || body.warmupFrom > this.clock())) throw new ApiError(400, 'INVALID_WARMUP', 'Warm-up starts at a past UTC epoch-millisecond time.');
     this.notifications.validateDestinations(body.destinations);
+    if (body.liveAction) await this.execution.validateLiveAction(body.liveAction);
     const instrument = await this.market.getInstrument(body.market);
     if (!instrument.timeframes.includes(body.timeframe)) throw new ApiError(422, 'UNSUPPORTED_TIMEFRAME', 'The instrument does not support this timeframe.');
     return structuredClone({ ...body, name: body.name.trim(), frequency: body.frequency ?? 'once_per_bar' });
@@ -143,6 +146,7 @@ export class AlertService {
       const row = this.#row(id);
       this.db.prepare('UPDATE alerts SET enabled=0,archived_at=?,updated_at=?,revision=revision+1 WHERE id=?').run(this.clock(), this.clock(), id);
       this.db.prepare("UPDATE alert_deliveries SET state='failed',last_error='Alert deleted' WHERE state IN ('pending','sending') AND event_id IN (SELECT id FROM alert_events WHERE alert_id=?)").run(id);
+      this.db.prepare("UPDATE alert_live_actions SET state='failed',error_code='ALERT_DELETED',error_message='Alert deleted before intent creation.',completed_at=? WHERE state='pending' AND event_id IN (SELECT id FROM alert_events WHERE alert_id=?)").run(this.clock(), id);
       return this.events.record('alerts.changed', id, row.revision + 1);
     }).immediate();
     this.#stop(id); this.events.emit(event); this.notifications.wake();
@@ -161,7 +165,11 @@ export class AlertService {
   }
   #insertEvent(row: AlertRow, payload: AlertPayload & Pick<AlertEvent, 'missed'>, kind: AlertEvent['kind'], key: string, deliver: boolean): boolean {
     const changed = this.db.prepare('INSERT OR IGNORE INTO alert_events(id,alert_id,alert_revision,dedupe_key,payload_json,occurred_at,created_at) VALUES (?,?,?,?,?,?,?)').run(payload.eventId, row.id, row.revision, key, JSON.stringify({ ...payload, kind }), payload.occurredAt, this.clock());
-    if (changed.changes && deliver) this.notifications.enqueue(payload.eventId, definition(row).destinations, this.clock());
+    if (changed.changes && deliver) {
+      const alert = definition(row);
+      this.notifications.enqueue(payload.eventId, alert.destinations, this.clock());
+      if (kind === 'signal' && alert.liveAction) this.execution.enqueueAlertAction(payload.eventId, alert.liveAction, this.clock());
+    }
     return changed.changes === 1;
   }
   #stop(id: string): void {
@@ -335,6 +343,6 @@ export class AlertService {
       return this.events.record('alerts.changed', row.id, row.revision);
     }).immediate();
     this.events.emit(invalidation);
-    if (fired) { this.notifications.wake(); if (alert.frequency === 'once') this.#stop(runtime.id); }
+    if (fired) { this.notifications.wake(); this.execution.wake(); if (alert.frequency === 'once') this.#stop(runtime.id); }
   }
 }

@@ -31,6 +31,8 @@ import { AlertService } from './alerts/AlertService.js';
 import { registerAlertRoutes } from './alerts/routes.js';
 import { NotificationService, type NotificationOptions } from './notifications/NotificationService.js';
 import { registerNotificationRoutes } from './notifications/routes.js';
+import { ExecutionService } from './execution/ExecutionService.js';
+import { registerExecutionRoutes } from './execution/routes.js';
 import './types.js';
 
 export interface BuildAppOptions {
@@ -64,7 +66,8 @@ export async function buildApp({ config, providers = {}, clock = Date.now, notif
   let replay: ReplayService | undefined;
   let notifications: NotificationService | undefined;
   let alerts: AlertService | undefined;
-  app.addHook('preClose', async () => { await alerts?.close(); await notifications?.close(); await replay?.close(); await paper?.close(); await pine?.close(); market?.close(); events.close(); });
+  let execution: ExecutionService | undefined;
+  app.addHook('preClose', async () => { await alerts?.close(); await execution?.close(); await notifications?.close(); await replay?.close(); await paper?.close(); await pine?.close(); market?.close(); events.close(); });
   app.addHook('onClose', async () => {
     security?.dispose();
     secrets.dispose();
@@ -82,20 +85,24 @@ export async function buildApp({ config, providers = {}, clock = Date.now, notif
     replay = new ReplayService(db, market, paper, clock, events);
     await replay.initialise();
     notifications = new NotificationService(db, secrets, config, clock, events, notificationOptions);
-    alerts = new AlertService(db, market, pine, scripts, notifications, clock, events);
+    execution = new ExecutionService(db, market, secrets, clock, events);
+    await execution.initialise();
+    alerts = new AlertService(db, market, pine, scripts, notifications, clock, events, execution);
     await notifications.initialise({
-      status: () => `PineTerm server · ${new Date(clock()).toISOString()} · paper simulation · no direct exchange execution`,
+      status: () => `PineTerm server · ${new Date(clock()).toISOString()} · paper simulation · live handoff ${execution!.getPolicy().enabled ? 'ENABLED' : 'disabled'} · no direct exchange execution`,
       alerts: () => alerts!.list().map(alert => `${alert.name}: ${alert.enabled ? 'armed' : 'paused'} · ${alert.market.provider.toUpperCase()}:${alert.market.symbol} · ${alert.timeframe}${alert.pausedReason ? ` · ${alert.pausedReason}` : ''}`).join('\n') || 'No alerts configured.',
       positions: async () => {
         const portfolios = await Promise.all(paper!.listAccounts('live').filter(account => !account.archivedAt).map(account => paper!.getAccount(account.id)));
-        return portfolios.map(view => `${view.account.name} · PAPER · cash ${view.account.cashBalance} ${view.account.quoteCurrency}\n${view.positions.map(position => `${position.market.provider.toUpperCase()}:${position.market.symbol} · owned ${position.quantity}`).join('\n')}`).join('\n\n') || 'No live paper accounts.';
+        const paperSummary = portfolios.map(view => `${view.account.name} · PAPER · cash ${view.account.cashBalance} ${view.account.quoteCurrency}\n${view.positions.map(position => `${position.market.provider.toUpperCase()}:${position.market.symbol} · owned ${position.quantity}`).join('\n')}`).join('\n\n') || 'No live paper accounts.';
+        const external = execution!.reportedPositions().map(position => `${position.market.provider.toUpperCase()}:${position.market.symbol} · externally reported net fill delta ${position.netQuantity} · not exchange balances`).join('\n');
+        return paperSummary + (external ? `\n\nEXTERNALLY REPORTED FILLS\n${external}` : '');
       },
     });
     await alerts.initialise();
     app.decorate('db', db);
     app.decorate('security', security);
     app.decorate('events', events);
-    app.decorate('services', { config, clock, providers: transports, secrets, market, pine, scripts, paper, replay, alerts, notifications });
+    app.decorate('services', { config, clock, providers: transports, secrets, market, pine, scripts, paper, replay, alerts, notifications, execution });
     app.decorateRequest('principal', null);
     installErrorHandling(app);
     for (const schema of sharedSchemas) app.addSchema(schema);
@@ -141,6 +148,7 @@ export async function buildApp({ config, providers = {}, clock = Date.now, notif
     await registerReplayRoutes(app, replay);
     await registerAlertRoutes(app, alerts);
     await registerNotificationRoutes(app, notifications);
+    await registerExecutionRoutes(app, execution);
     const hasWebBuild = existsSync(join(config.webDistDir, 'index.html'));
     if (config.mode === 'production' && !hasWebBuild) {
       throw new Error('Production web assets are missing. Run npm run build before npm start.');

@@ -21,7 +21,7 @@ export function parseDataset(meta: DatasetImport, csv: string): { meta: DatasetI
   if (!isTimeframe(meta.timeframe)) throw new ApiError(422, 'UNSUPPORTED_TIMEFRAME', 'Select a supported dataset timeframe.');
   for (const field of ['tickSize', 'quantityStep'] as const) {
     try {
-      if (meta[field].length > 100 || !financialDecimal(meta[field]).isPositive()) throw new Error('not positive');
+      if (meta[field].length > 100 || !financialDecimal(meta[field]).gt(0)) throw new Error('not positive');
     } catch {
       throw new ApiError(400, 'INVALID_DATASET_METADATA', `${field} must be a positive canonical decimal string.`);
     }

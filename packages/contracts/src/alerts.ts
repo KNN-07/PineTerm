@@ -1,5 +1,6 @@
 import type { MarketRef } from './market.js';
 import type { PineValue } from './pine.js';
+import type { LiveAction, LiveActionResult } from './execution.js';
 
 export interface PriceAlertCondition { kind: 'price'; operator: 'above' | 'below' | 'crosses_above' | 'crosses_below'; price: string }
 export interface PineAlertCondition { kind: 'pine'; eventType: 'alert' | 'alertcondition'; title?: string }
@@ -11,6 +12,7 @@ export interface AlertCommand {
   frequency: 'once' | 'once_per_bar'; enabled: boolean; condition: AlertCondition;
   scriptRevisionId?: string; inputs?: Record<string, PineValue>; warmupFrom?: number;
   destinations: AlertDestination[];
+  liveAction?: LiveAction;
 }
 export interface AlertDefinition extends Omit<AlertCommand, 'warmupFrom'> {
   id: string; revision: number; warmupFrom: number | null; watermark: number | null;
@@ -29,6 +31,7 @@ export interface AlertDelivery {
 export interface AlertEvent extends AlertPayload {
   alertRevision: number; kind: 'signal' | 'test' | 'missed'; createdAt: number; deliveries: AlertDelivery[];
   missed?: { from: number; to: number; count: number; reason: string };
+  liveAction?: LiveActionResult;
 }
 export interface WebhookConfig { id: string; name: string; url: string; revision: number; secretConfigured: boolean; createdAt: number; updatedAt: number }
 export interface CreateWebhook { name: string; url: string; secret: string }

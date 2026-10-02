@@ -117,6 +117,7 @@ describe('durable server alert boundaries', () => {
   it('rejects unsupported/ambiguous groups, replay origin and unauthorized mutations', async () => {
     const fixture = await alertApp();
     const invalid = [
+      { ...command, condition: { kind: 'price', operator: 'above', price: '0' } },
       { ...command, condition: { kind: 'group', operator: 'all', conditions: [] } },
       { ...command, condition: { kind: 'group', operator: 'all', conditions: [command.condition, { kind: 'group', operator: 'any', conditions: [command.condition] }] } },
       { ...command, mode: 'quote', condition: { kind: 'pine', eventType: 'alert' }, scriptRevisionId: '00000000-0000-4000-8000-000000000001' },

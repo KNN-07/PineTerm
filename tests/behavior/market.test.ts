@@ -45,6 +45,14 @@ describe('authoritative market history', () => {
     expect(db.prepare('SELECT count(*) AS count FROM datasets').get()).toEqual({ count: 0 });
     expect(db.prepare('SELECT count(*) AS count FROM dataset_bars').get()).toEqual({ count: 0 });
   });
+  it('rejects zero instrument steps atomically and a zero live-provider quote', async () => {
+    const { db, service, coinbase } = await marketService();
+    for (const changes of [{ tickSize: '0' }, { quantityStep: '0' }]) expect(() => service.importDataset({ ...metadata, ...changes }, FIXTURE_CSV)).toThrow();
+    expect(db.prepare('SELECT count(*) AS count FROM datasets').get()).toEqual({ count: 0 });
+    expect(db.prepare('SELECT count(*) AS count FROM dataset_bars').get()).toEqual({ count: 0 });
+    coinbase.quote.price = '0';
+    await expect(service.getQuote({ provider: 'coinbase', symbol: 'BTC-USD' })).rejects.toMatchObject({ statusCode: 503, code: 'INVALID_PROVIDER_DATA' });
+  });
   it('aggregates raw values but records missing base bars rather than inventing candles', async () => {
     const { service } = await marketService();
     const dataset = service.importDataset(metadata, FIXTURE_CSV);

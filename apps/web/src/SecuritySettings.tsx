@@ -5,6 +5,7 @@ import type { ApiKey, ApiKeyScope, CreateApiKeyBody } from '@pineterm/contracts'
 import { ApiClient, ApiError, errorMessage } from './api.js';
 import { Modal } from './Modal.js';
 import { SettingsNavigation } from './features/alerts/SettingsNavigation.js';
+import { useExecution } from './features/execution/ExecutionContext.js';
 
 const scopeDescriptions: Record<ApiKeyScope, string> = {
   'market:read': 'Read market data',
@@ -27,13 +28,16 @@ export function SecuritySettings({
   onSessionExpired,
   onOpenData,
   onOpenNotifications,
+  onOpenExecution,
 }: {
   client: ApiClient;
   onClose: () => void;
   onSessionExpired: () => void;
   onOpenData: () => void;
   onOpenNotifications: () => void;
+  onOpenExecution: () => void;
 }) {
+  const { executors, loading: executorsLoading, error: executionError, refresh: refreshExecution } = useExecution();
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadVersion, setLoadVersion] = useState(0);
@@ -84,7 +88,7 @@ export function SecuritySettings({
 
   async function createKey(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || newToken) return;
+    if (busy || newToken || (requiresExecutor && !executors.some((executor) => executor.id === executorId && executor.archivedAt === null))) return;
     setBusy('create');
     setError(null);
     setNotice(null);
@@ -137,10 +141,10 @@ export function SecuritySettings({
 
   return (
     <Modal title="Security settings" titleId="security-title" onClose={onClose} closeDisabled={busy !== null}>
-      <SettingsNavigation active="security" onData={onOpenData} onSecurity={() => {}} onNotifications={onOpenNotifications} disabled={busy !== null} />
+      <SettingsNavigation active="security" onData={onOpenData} onSecurity={() => {}} onNotifications={onOpenNotifications} onExecution={onOpenExecution} disabled={busy !== null || newToken !== null} />
       <p>API keys grant only their selected scopes. Keep tokens outside source control and browser storage.</p>
       <p className="muted">Only the signed-in administrator can create or revoke keys. A key cannot manage security settings or create other keys.</p>
-      <p className="readiness-note">Market, saved-script, backtest, and live-paper routes accept their corresponding scopes. Alerts and notification configuration require an administrator session. Executor / live handoff services are not available yet; creating a scope does not enable them.</p>
+      <p className="readiness-note">Market, script, backtest, paper and live-intent routes accept their corresponding scopes. Executor claim, control and reports require an API key bound to a registered executor; an administrator session cannot impersonate that executor. Only Execution settings can enable finite live policy.</p>
       {error && <p className="message error" role="alert">{error}</p>}
       {notice && <p className="message" role="status">{notice}</p>}
       {newToken && (
@@ -180,12 +184,14 @@ export function SecuritySettings({
             </fieldset>
             {requiresExecutor && (
               <div className="form-field">
-                <label htmlFor="executor-id">Executor ID</label>
-                <input id="executor-id" value={executorId} onChange={(event) => setExecutorId(event.target.value)} required autoComplete="off" aria-describedby="executor-help" />
-                <p id="executor-help" className="muted">Executor scopes must be bound to one executor ID. No executor service is implemented in this milestone.</p>
+                <label htmlFor="executor-id">Registered executor binding</label>
+                <select id="executor-id" value={executorId} onChange={(event) => setExecutorId(event.target.value)} required disabled={executorsLoading || !!executionError} aria-describedby="executor-help"><option value="">Choose registered executor</option>{executors.filter((executor) => executor.archivedAt === null).map((executor) => <option key={executor.id} value={executor.id}>{executor.name}{executor.enabled ? '' : ' · disabled'} · {executor.id}</option>)}</select>
+                <p id="executor-help" className="muted">Executor scopes bind to this registration only. Register an operator executor under Execution first. Keep its token in the external client, never an exchange credential in PineTerm.</p>
+                {executionError && <p className="message error" role="alert">{executionError}</p>}
+                <div className="actions"><button type="button" onClick={refreshExecution}>Refresh registered executors</button><button type="button" onClick={onOpenExecution}>Execution settings</button></div>
               </div>
             )}
-            <button type="submit" className="primary" disabled={name.trim().length === 0 || scopes.length === 0 || (requiresExecutor && executorId.trim().length === 0)}>
+            <button type="submit" className="primary" disabled={name.trim().length === 0 || scopes.length === 0 || (requiresExecutor && (executorsLoading || !!executionError || !executors.some((executor) => executor.id === executorId && executor.archivedAt === null)))}>
               {busy === 'create' ? 'Creating…' : 'Create key'}
             </button>
           </fieldset>

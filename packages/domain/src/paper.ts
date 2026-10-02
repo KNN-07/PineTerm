@@ -6,7 +6,7 @@ const BASIS_POINTS = new Decimal(10_000);
 
 export function positivePaperDecimal(value: string, label: string): Decimal {
   const amount = financialDecimal(value);
-  if (!amount.isPositive()) throw new Error(`${label} must be positive.`);
+  if (!amount.gt(0)) throw new Error(`${label} must be positive.`);
   return amount;
 }
 

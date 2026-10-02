@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { IntegrationTestResult, TelegramConfig, WebhookConfig } from '../packages/contracts/src/index.js';
+import { runSandboxExecutorScenario } from './smoke/sandbox-executor.js';
 
 const flags = new Set(process.argv.slice(2));
-if ([...flags].some(flag => !['--telegram', '--webhook'].includes(flag))) throw new Error('Supported integration checks: --telegram, --webhook. Omit flags to request both.');
-const selected = flags.size ? [...flags] : ['--telegram', '--webhook'];
+if ([...flags].some(flag => !['--telegram', '--webhook', '--executor'].includes(flag))) throw new Error('Supported integration checks: --telegram, --webhook, --executor. Omit flags to request all three.');
+const selected = flags.size ? [...flags] : ['--telegram', '--webhook', '--executor'];
 const base = new URL(process.env.PINETERM_SMOKE_URL ?? 'http://127.0.0.1:3000');
 if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash || base.pathname !== '/') throw new Error('PINETERM_SMOKE_URL must be an HTTP(S) origin without credentials, query or path.');
 const origin = process.env.PINETERM_SMOKE_ORIGIN ?? base.origin;
@@ -47,6 +48,8 @@ try {
         }
         assert.ok(acknowledged, 'Outgoing message acknowledged, but no fresh authorized /status reply acknowledgement was observed. Incoming live acceptance is blocked until the operator sends that command.');
         console.log(`telegram: authorized /status response sent · update ${acknowledged.updateId} · ${new Date(acknowledged.observedAt).toISOString()}`);
+      } else if (service === '--executor') {
+        await runSandboxExecutorScenario(base.origin, api);
       } else {
         const { webhooks } = await api<{ webhooks: WebhookConfig[] }>('/webhooks');
         const id = process.env.PINETERM_SMOKE_WEBHOOK_ID ?? (webhooks.length === 1 ? webhooks[0]!.id : undefined);

@@ -18,3 +18,4 @@ export function decimalString(value: Decimal): string {
 }
 
 export * from './paper.js';
+export * from './risk.js';

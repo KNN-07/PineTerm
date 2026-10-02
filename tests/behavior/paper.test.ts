@@ -46,6 +46,23 @@ async function account(app: FastifyInstance, headers: Record<string, string>) {
 }
 
 describe('server-authoritative spot paper accounting', () => {
+  it('rejects zero order amounts and never fills on a zero-price observation', async () => {
+    const fixture = await paperApp();
+    const view = await account(fixture.app, fixture.headers);
+    const body = { accountId: view.account.id, market, side: 'buy', type: 'market', quantity: '1' };
+    for (const [index, changes] of [{ quantity: '0' }, { type: 'limit', limitPrice: '0' }, { type: 'stop', stopPrice: '0' }].entries()) {
+      const invalid = await fixture.app.inject({ method: 'POST', url: '/api/v1/paper/orders', headers: { ...fixture.headers, 'idempotency-key': 'zero-' + index }, payload: { ...body, ...changes } });
+      expect(invalid.statusCode).toBeGreaterThanOrEqual(400);
+    }
+    const placed = await fixture.app.inject({ method: 'POST', url: '/api/v1/paper/orders', headers: { ...fixture.headers, 'idempotency-key': 'valid-after-zero' }, payload: body });
+    expect(placed.statusCode).toBe(201);
+    fixture.quote('0');
+    const blocked = await fixture.app.services.paper.getAccount(view.account.id);
+    expect(blocked.fills).toEqual([]); expect(blocked.account.cashBalance).toBe('1000');
+    fixture.quote('10');
+    const filled = await fixture.app.services.paper.getAccount(view.account.id);
+    expect(filled.fills).toHaveLength(1); expect(filled.fills[0].price).toBe('10'); expect(filled.account.cashBalance).toBe('990');
+  });
   it('uses a new quote, dedupes idempotency, realizes exact P/L and survives restart', async () => {
     const fixture = await paperApp();
     const view = await account(fixture.app, fixture.headers);

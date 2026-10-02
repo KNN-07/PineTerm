@@ -31,7 +31,7 @@ export function paperQuoteEventId(quote: Quote): string {
 function checkedDecimal(value: string, label: string, positive: boolean): Decimal {
   let amount: Decimal;
   try { amount = financialDecimal(value); } catch { throw new ApiError(400, 'INVALID_DECIMAL', `${label} must be a canonical decimal string.`); }
-  if (positive ? !amount.isPositive() : amount.isNegative()) throw new ApiError(400, 'INVALID_DECIMAL', `${label} must be ${positive ? 'positive' : 'nonnegative'}.`);
+  if (positive ? !amount.gt(0) : amount.isNegative()) throw new ApiError(400, 'INVALID_DECIMAL', `${label} must be ${positive ? 'positive' : 'nonnegative'}.`);
   return amount;
 }
 
@@ -138,7 +138,7 @@ export class PaperService {
   private fresh(quote: Quote, now: number): boolean {
     let price: Decimal;
     try { price = financialDecimal(quote.price); } catch { return false; }
-    return quote.market.provider !== 'csv' && quote.status === 'live' && price.isPositive() && Number.isSafeInteger(quote.observedAt) && quote.observedAt <= now && now - quote.observedAt <= 30_000 && this.feedStatus.get(`${quote.market.provider}:${quote.market.symbol}`) !== 'stale';
+    return quote.market.provider !== 'csv' && quote.status === 'live' && price.gt(0) && Number.isSafeInteger(quote.observedAt) && quote.observedAt <= now && now - quote.observedAt <= 30_000 && this.feedStatus.get(`${quote.market.provider}:${quote.market.symbol}`) !== 'stale';
   }
   private async refreshMarks(accountId?: string): Promise<void> {
     if (accountId !== undefined) this.accountRow(accountId);

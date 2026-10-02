@@ -264,3 +264,4 @@ export * from './pine.js';
 export * from './templates.js';
 export * from './trading.js';
 export * from './alerts.js';
+export * from './execution.js';

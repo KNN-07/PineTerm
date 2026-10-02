@@ -1,0 +1,48 @@
+.execution-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border: 1px solid #253247; margin-bottom: 16px; min-width: 0; }
+.execution-status.is-live { border-color: #fb7185; }
+.execution-status .execution-state-label { text-align: left; }
+.execution-status.is-live .execution-state-label { color: #fb7185; font-weight: 750; letter-spacing: .03em; }
+.execution-status > p, .execution-status > .message { flex-basis: 100%; margin: 0; }
+.execution-status.is-compact { padding: 0; border: 0; margin: 0; gap: 4px; flex-shrink: 0; }
+.execution-cancel-warning { flex-basis: 100%; font-size: 10px; line-height: 1.2; color: #fb7185; }
+.signed-in-shell .app-header:has(.execution-cancel-warning) { height: 56px; min-height: 56px; }
+.execution-settings, .external-trading-panel, .fixed-live-action { min-width: 0; overflow-wrap: anywhere; }
+.external-trading-panel { border-top: 2px solid #fb7185; margin-top: 24px; padding-top: 16px; }
+.execution-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; margin-top: 12px; }
+.execution-form-grid .form-field { min-width: 0; }
+.execution-form-grid select, .execution-settings select { width: 100%; }
+.execution-checkbox { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; }
+.execution-checkbox input { margin-top: 2px; }
+.execution-policy-row { border: 1px solid #253247; padding: 12px; margin: 12px 0; }
+.execution-settings legend, .external-trading-panel legend { font-weight: 650; margin-bottom: 8px; }
+.execution-settings .actions, .external-trading-panel .actions { margin: 12px 0; flex-wrap: wrap; }
+.execution-settings .pane-title, .external-trading-panel .pane-title { flex-wrap: wrap; }
+.execution-settings .message small { display: block; margin-top: 8px; }
+.execution-cards { display: grid; gap: 12px; list-style: none; padding: 0; margin: 12px 0; }
+.execution-cards > li { min-width: 0; border: 1px solid #253247; padding: 12px; display: flex; flex-direction: column; gap: 8px; overflow-wrap: anywhere; }
+.execution-cards h4 { margin: 0; }
+.execution-cards .selected-intent { border-color: #2dd4bf; outline: 1px solid #2dd4bf; }
+.execution-cards code, .external-trading-panel code { white-space: normal; overflow-wrap: anywhere; }
+.execution-cards pre, .external-trading-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.execution-details { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 5px 12px; margin: 6px 0; }
+.execution-details dt { color: #a1afc4; }
+.execution-details dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+.execution-risk { border-top: 1px solid #253247; padding-top: 12px; margin-top: 20px; }
+.fixed-live-action { border: 1px solid #fb7185; padding: 12px; }
+.fixed-live-action > small { display: block; margin-top: 10px; color: #a1afc4; }
+@media (max-width: 800px) {
+  .signed-in-shell .app-header, .signed-in-shell .app-header:has(.execution-cancel-warning) { height: auto; min-height: 88px; flex-wrap: wrap; gap: 0 8px; flex-shrink: 0; }
+  .signed-in-shell .app-header .execution-status { order: 3; width: 100%; flex-shrink: 1; padding-bottom: 4px; }
+  .signed-in-shell .app-header .execution-state-label { flex: 1; }
+  .signed-in-shell .app-header .execution-status button { min-height: 44px; }
+  .execution-status.is-compact .execution-cancel-warning { padding-bottom: 3px; font-size: 11px; }
+}
+@media (max-width: 600px) {
+  .execution-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .execution-details { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  .execution-details dd { margin-bottom: 8px; }
+  .execution-settings button, .external-trading-panel button, .fixed-live-action button, .execution-settings select, .external-trading-panel select { min-height: 44px; }
+  .execution-settings .actions button, .external-trading-panel .actions button { flex: 1 1 auto; }
+  .execution-status { gap: 6px; }
+  .execution-cards > li { padding: 10px; }
+}
