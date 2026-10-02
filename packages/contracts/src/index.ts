@@ -265,3 +265,4 @@ export * from './templates.js';
 export * from './trading.js';
 export * from './alerts.js';
 export * from './execution.js';
+export * from './agent.js';

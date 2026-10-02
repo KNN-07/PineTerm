@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IndicatorHandle } from '@luxalgo/vela';
 import type { VelaWorkspace, WorkspaceScriptRun } from '@luxalgo/vela/workspace';
-import { PINE_TEMPLATES, createPineTemplate, pineSourceVersion, type Instrument, type InvalidationEvent, type PineValidation, type PineValue, type ScriptRecord, type ScriptRevision } from '@pineterm/contracts';
+import { PINE_TEMPLATES, createPineTemplate, pineSourceVersion, type AppliedAgentDraft, type Instrument, type InvalidationEvent, type PineValidation, type PineValue, type ScriptRecord, type ScriptRevision } from '@pineterm/contracts';
 import { ApiClient, ApiError, errorMessage } from '../../api.js';
 import type { ActiveChart } from '../workspace/ChartWorkspace.js';
 import { PineEditor } from './PineEditor.js';
 import { PineSettings } from './PineSettings.js';
 import { StrategyTester } from './StrategyTester.js';
+import type { AgentScriptSelection } from '../agent/AgentPanel.js';
 import './scripts.css';
 
 interface SavedScript { script: ScriptRecord; revision: ScriptRevision }
 const EMPTY_SOURCE = '//@version=6\nindicator("Untitled", overlay=true)\nplot(close, "Close")\n';
 
-export function ScriptsDock({ client, workspace, active, replayLocked, tab, onTab, onSessionError }: { client: ApiClient; workspace: VelaWorkspace | null; active: ActiveChart; replayLocked: boolean; tab: 'editor' | 'tester' | 'trading'; onTab: (tab: 'editor' | 'tester') => void; onSessionError: (failure: ApiError) => void }) {
+export function ScriptsDock({ client, workspace, active, replayLocked, tab, onTab, onSessionError, onAgentContext, appliedAgentDraft }: { client: ApiClient; workspace: VelaWorkspace | null; active: ActiveChart; replayLocked: boolean; tab: 'editor' | 'tester' | 'trading'; onTab: (tab: 'editor' | 'tester') => void; onSessionError: (failure: ApiError) => void; onAgentContext: (value: AgentScriptSelection) => void; appliedAgentDraft: AppliedAgentDraft | null }) {
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
   const [saved, setSaved] = useState<SavedScript | null>(null);
   const [revision, setRevision] = useState<ScriptRevision | null>(null);
@@ -31,6 +32,11 @@ export function ScriptsDock({ client, workspace, active, replayLocked, tab, onTa
   const booted = useRef(false); const operation = useRef<AbortController | null>(null);
   const dirty = !revision || source !== revision.source || name !== saved?.script.name || JSON.stringify(inputs) !== JSON.stringify(revision.inputs) || JSON.stringify(props) !== JSON.stringify(revision.props);
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty;
+  const openedAgentRevision = useRef<string | null>(null);
+  useEffect(() => {
+    const diagnostic = validation?.diagnostics[0];
+    onAgentContext({ revisionId: revision?.id ?? null, name: saved?.script.name ?? null, sourceSaved: !!revision && !dirty, diagnostic: diagnostic ? `${diagnostic.code}: ${diagnostic.message}${diagnostic.line === undefined ? '' : ` · line ${diagnostic.line}`}` : error?.startsWith('Browser Pine preview:') ? error : null });
+  }, [revision?.id, saved?.script.name, dirty, validation, error, onAgentContext]);
   const fail = useCallback((failure: unknown) => {
     if (failure instanceof ApiError && (failure.status === 401 || failure.status === 403)) onSessionError(failure);
     setError(errorMessage(failure));
@@ -40,6 +46,22 @@ export function ScriptsDock({ client, workspace, active, replayLocked, tab, onTa
     booted.current = true;
     setValidation(null); setConflict(false); setError(null); setDocumentKey(selected.id); setPlacement('declaration');
   }, []);
+
+  useEffect(() => {
+    if (!appliedAgentDraft || openedAgentRevision.current === appliedAgentDraft.revision.id) return;
+    openedAgentRevision.current = appliedAgentDraft.revision.id;
+    setLibraryVersion(current => current + 1);
+    if (dirtyRef.current && booted.current && !window.confirm('The Pi draft was applied as a saved script. Discard your current unsaved editor draft and open its new revision? Cancel keeps your editor draft; the applied script remains in the library.')) {
+      setNotice(`Applied “${appliedAgentDraft.script.name}” is saved in the library. Current unsaved editor draft preserved; select the applied script when ready.`);
+      return;
+    }
+    restore({ script: appliedAgentDraft.script, revision: appliedAgentDraft.revision });
+    setRevisions([appliedAgentDraft.revision]);
+    setNotice('User-applied Pi revision opened. It has not been run on the chart or used to arm an alert. Use Backtest to select an explicit UTC range.');
+    const controller = new AbortController();
+    void client.request<{ revisions: ScriptRevision[] }>(`/scripts/${encodeURIComponent(appliedAgentDraft.script.id)}/revisions`, { signal: controller.signal }).then(({ revisions: values }) => { if (!controller.signal.aborted) setRevisions(values); }).catch(failure => { if (!controller.signal.aborted) fail(failure); });
+    return () => controller.abort();
+  }, [appliedAgentDraft, client, restore, fail]);
 
   useEffect(() => {
     const controller = new AbortController();

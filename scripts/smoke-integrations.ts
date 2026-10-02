@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { IntegrationTestResult, TelegramConfig, WebhookConfig } from '../packages/contracts/src/index.js';
 import { runSandboxExecutorScenario } from './smoke/sandbox-executor.js';
+import { runConfiguredAgentScenario } from './smoke/configured-agent.js';
 
 const flags = new Set(process.argv.slice(2));
-if ([...flags].some(flag => !['--telegram', '--webhook', '--executor'].includes(flag))) throw new Error('Supported integration checks: --telegram, --webhook, --executor. Omit flags to request all three.');
-const selected = flags.size ? [...flags] : ['--telegram', '--webhook', '--executor'];
+if ([...flags].some(flag => !['--telegram', '--webhook', '--executor', '--agent'].includes(flag))) throw new Error('Supported integration checks: --telegram, --webhook, --executor, --agent. Omit flags to request all four.');
+const selected = flags.size ? [...flags] : ['--telegram', '--webhook', '--executor', '--agent'];
 const base = new URL(process.env.PINETERM_SMOKE_URL ?? 'http://127.0.0.1:3000');
 if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash || base.pathname !== '/') throw new Error('PINETERM_SMOKE_URL must be an HTTP(S) origin without credentials, query or path.');
 const origin = process.env.PINETERM_SMOKE_ORIGIN ?? base.origin;
@@ -17,9 +18,9 @@ const cookie = login.headers.get('set-cookie')?.split(';')[0];
 const { csrfToken } = await login.json() as { csrfToken: string };
 assert.ok(cookie && csrfToken, 'No authenticated session returned');
 
-async function api<T>(path: string, method = 'GET'): Promise<T> {
+async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const response = await fetch(new URL('/api/v1' + path, base), {
-    method, headers: { Cookie: cookie!, Origin: origin, 'x-csrf-token': csrfToken }, signal: AbortSignal.timeout(30000), redirect: 'error',
+    method, headers: { Cookie: cookie!, Origin: origin, 'x-csrf-token': csrfToken, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30000), redirect: 'error',
   });
   if (!response.ok) throw new Error(`Integration API ${path.split('?')[0]} returned HTTP ${response.status}`);
   return await response.json() as T;
@@ -50,6 +51,8 @@ try {
         console.log(`telegram: authorized /status response sent · update ${acknowledged.updateId} · ${new Date(acknowledged.observedAt).toISOString()}`);
       } else if (service === '--executor') {
         await runSandboxExecutorScenario(base.origin, api);
+      } else if (service === '--agent') {
+        await runConfiguredAgentScenario(base.origin, api, { Cookie: cookie!, Origin: origin });
       } else {
         const { webhooks } = await api<{ webhooks: WebhookConfig[] }>('/webhooks');
         const id = process.env.PINETERM_SMOKE_WEBHOOK_ID ?? (webhooks.length === 1 ? webhooks[0]!.id : undefined);

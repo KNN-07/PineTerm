@@ -10,8 +10,8 @@ import { ExecutionRisk } from './ExecutionRisk.js';
 
 interface MarketRuleDraft { provider: '' | 'coinbase' | 'binance'; symbol: string; buy: boolean; sell: boolean }
 interface CurrencyLimitDraft { quoteCurrency: string; perOrderNotional: string; rolling24hNotional: string }
-export function ExecutionSettings({ onClose, onOpenData, onOpenSecurity, onOpenNotifications }: {
-  onClose: () => void; onOpenData: () => void; onOpenSecurity: () => void; onOpenNotifications: () => void;
+export function ExecutionSettings({ onClose, onOpenData, onOpenSecurity, onOpenNotifications, onOpenAgent }: {
+  onClose: () => void; onOpenData: () => void; onOpenSecurity: () => void; onOpenNotifications: () => void; onOpenAgent: () => void;
 }) {
   const { client, policy, executors, loading, error: loadError, policyBusy, savePolicy, refresh } = useExecution();
   const [busy, setBusy] = useState(false);
@@ -65,7 +65,7 @@ export function ExecutionSettings({ onClose, onOpenData, onOpenSecurity, onOpenN
   const locked = busy || policyBusy;
   return <Modal title="Settings · external execution" titleId="execution-settings-title" onClose={onClose} closeDisabled={locked}>
     <div className="execution-settings">
-      <SettingsNavigation active="execution" onData={onOpenData} onSecurity={onOpenSecurity} onNotifications={onOpenNotifications} onExecution={() => {}} disabled={locked} />
+      <SettingsNavigation active="execution" onData={onOpenData} onSecurity={onOpenSecurity} onNotifications={onOpenNotifications} onExecution={() => {}} onAgent={onOpenAgent} disabled={locked} />
       <ExecutionStatus />
       <p>Opt-in pull/claim handoff to an operator-specified external driver. PineTerm never holds exchange credentials or submits to an exchange directly. Administrator sessions cannot fabricate executor acknowledgements or fills.</p>
       {error && <p className="message error" role="alert">{error}<small>Revision conflicts require refreshing and reviewing current state. No forced overwrite.</small></p>}

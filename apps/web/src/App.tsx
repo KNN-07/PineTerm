@@ -7,6 +7,7 @@ import { Terminal } from './features/workspace/Terminal.js';
 import { IntegrationSettings } from './features/alerts/IntegrationSettings.js';
 import { ExecutionProvider, ExecutionStatus } from './features/execution/ExecutionContext.js';
 import { ExecutionSettings } from './features/execution/ExecutionSettings.js';
+import { AgentSettings } from './features/agent/AgentSettings.js';
 
 type SessionState = 'checking' | 'signed-out' | 'signed-in' | 'unavailable';
 
@@ -18,7 +19,8 @@ export function App() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [panel, setPanel] = useState<'data' | 'security' | 'notifications' | 'execution' | 'about' | null>(null);
+  const [panel, setPanel] = useState<'data' | 'security' | 'notifications' | 'execution' | 'agent' | 'about' | null>(null);
+  const [agentConfigVersion, setAgentConfigVersion] = useState(0);
   const loginInput = useRef<HTMLInputElement>(null);
   const settingsButton = useRef<HTMLButtonElement>(null);
   const aboutButton = useRef<HTMLButtonElement>(null);
@@ -88,7 +90,7 @@ export function App() {
   function closePanel() {
     const previous = panel;
     setPanel(null);
-    if (previous === 'security' || previous === 'data' || previous === 'notifications' || previous === 'execution') settingsButton.current?.focus();
+    if (previous === 'security' || previous === 'data' || previous === 'notifications' || previous === 'execution' || previous === 'agent') settingsButton.current?.focus();
     else aboutButton.current?.focus();
   }
 
@@ -139,16 +141,17 @@ export function App() {
             </form>
           </section>
         )}
-        {sessionState === 'signed-in' && <Terminal client={client} onSessionExpired={onSessionExpired} onConnection={setConnection} settingsOpen={panel === 'data'} onCloseSettings={closePanel} onOpenSecurity={() => setPanel('security')} onOpenNotifications={() => setPanel('notifications')} onOpenExecution={() => setPanel('execution')} />}
+        {sessionState === 'signed-in' && <Terminal client={client} onSessionExpired={onSessionExpired} onConnection={setConnection} settingsOpen={panel === 'data'} onCloseSettings={closePanel} onOpenSecurity={() => setPanel('security')} onOpenNotifications={() => setPanel('notifications')} onOpenExecution={() => setPanel('execution')} onOpenAgent={() => setPanel('agent')} agentConfigVersion={agentConfigVersion} />}
       </main>
       <footer className="app-footer">
         <span>PineTerm · AGPL-3.0-only</span>
         <span>Charts by <a href="https://velacharts.dev" target="_blank" rel="noopener noreferrer">Vela by LuxAlgo</a></span>
         <span>Venue-qualified data · operator-driven external execution</span>
       </footer>
-      {panel === 'security' && sessionState === 'signed-in' && <SecuritySettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => setPanel('data')} onOpenNotifications={() => setPanel('notifications')} onOpenExecution={() => setPanel('execution')} />}
-      {panel === 'notifications' && sessionState === 'signed-in' && <IntegrationSettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => setPanel('data')} onOpenSecurity={() => setPanel('security')} onOpenExecution={() => setPanel('execution')} />}
-      {panel === 'execution' && sessionState === 'signed-in' && <ExecutionSettings onClose={closePanel} onOpenData={() => setPanel('data')} onOpenSecurity={() => setPanel('security')} onOpenNotifications={() => setPanel('notifications')} />}
+      {panel === 'security' && sessionState === 'signed-in' && <SecuritySettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => setPanel('data')} onOpenNotifications={() => setPanel('notifications')} onOpenExecution={() => setPanel('execution')} onOpenAgent={() => setPanel('agent')} />}
+      {panel === 'notifications' && sessionState === 'signed-in' && <IntegrationSettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => setPanel('data')} onOpenSecurity={() => setPanel('security')} onOpenExecution={() => setPanel('execution')} onOpenAgent={() => setPanel('agent')} />}
+      {panel === 'execution' && sessionState === 'signed-in' && <ExecutionSettings onClose={closePanel} onOpenData={() => setPanel('data')} onOpenSecurity={() => setPanel('security')} onOpenNotifications={() => setPanel('notifications')} onOpenAgent={() => setPanel('agent')} />}
+      {panel === 'agent' && sessionState === 'signed-in' && <AgentSettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => setPanel('data')} onOpenSecurity={() => setPanel('security')} onOpenNotifications={() => setPanel('notifications')} onOpenExecution={() => setPanel('execution')} onChanged={() => setAgentConfigVersion(value => value + 1)} />}
       {panel === 'about' && <About client={client} onClose={closePanel} />}
     </div>
     </ExecutionProvider>

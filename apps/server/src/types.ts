@@ -11,6 +11,8 @@ import type { ReplayService } from './replay/ReplayService.js';
 import type { AlertService } from './alerts/AlertService.js';
 import type { NotificationService } from './notifications/NotificationService.js';
 import type { ExecutionService } from './execution/ExecutionService.js';
+import type { AgentService } from './agent/AgentService.js';
+import type { AgentDraftService } from './agent/AgentDraftService.js';
 
 export interface ServerServices {
   config: Config;
@@ -25,6 +27,8 @@ export interface ServerServices {
   alerts: AlertService;
   notifications: NotificationService;
   execution: ExecutionService;
+  agent: AgentService;
+  agentDrafts: AgentDraftService;
 }
 
 declare module 'fastify' {

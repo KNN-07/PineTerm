@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Decimal } from 'decimal.js';
-import type { Bar, BarPage, BarRange, InvalidationEvent, MarketRef, Quote, ReplayMarket, ReplayRequest, ReplaySession, ReplaySnapshot } from '@pineterm/contracts';
+import type { Bar, BarPage, BarRange, Instrument, InvalidationEvent, MarketRef, Quote, ReplayMarket, ReplayRequest, ReplaySession, ReplaySnapshot } from '@pineterm/contracts';
 import { decimalString } from '@pineterm/domain';
 import { barIssue, bucketStart, canAggregate, findGaps, fixedDuration, isTimeframe, nextBucket } from '../../../../packages/domain/src/market.js';
 import type { AppDatabase } from '../database.js';
@@ -186,6 +186,12 @@ export class ReplayService {
     const eligible = snapshot!.bars.filter(bar => bar.time >= (range.from ?? 0) && bar.time < (range.to ?? Infinity) && nextBucket(bar.time, timeframe) <= closeCursor);
     const bars = eligible.slice(-limit);
     return { asOf: row.cursor_time, status: 'historical', bars: structuredClone(bars), nextBefore: eligible.length > bars.length ? bars[0]!.time : null, gaps: [] };
+  }
+  getInstrument(id: string, market: MarketRef, timeframe: string): Instrument {
+    const row = this.#row(id, true);
+    const snapshot = this.#context(row).series.find(item => sameMarket(item.market, market) && item.timeframe === timeframe);
+    if (!snapshot) throw new ApiError(404, 'REPLAY_MARKET_NOT_FOUND', 'The requested frozen series metadata is not loaded in this replay.');
+    return structuredClone(snapshot.symbolInfo);
   }
 
   getQuote(id: string, market: MarketRef): Quote {

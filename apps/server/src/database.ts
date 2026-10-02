@@ -523,6 +523,27 @@ const migrations: readonly Migration[] = [
       CREATE INDEX execution_audit_history ON execution_audit(created_at, id);
     `,
   },
+  {
+    version: 8,
+    name: 'restricted_agent_stream_and_validated_drafts',
+    sql: `
+      ALTER TABLE agent_drafts ADD COLUMN name TEXT NOT NULL DEFAULT 'Generated draft';
+      ALTER TABLE agent_drafts ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE agent_drafts ADD COLUMN inputs_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(inputs_json));
+      ALTER TABLE agent_drafts ADD COLUMN props_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(props_json));
+      ALTER TABLE agent_drafts ADD COLUMN validation_hash TEXT;
+      ALTER TABLE agent_drafts ADD COLUMN apply_hash TEXT;
+      ALTER TABLE agent_drafts ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+      CREATE TABLE agent_stream_events (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE RESTRICT,
+        event_json TEXT NOT NULL CHECK(json_valid(event_json)),
+        created_at INTEGER NOT NULL
+      ) STRICT;
+      CREATE INDEX agent_stream_session ON agent_stream_events(session_id, sequence);
+      CREATE INDEX agent_drafts_session ON agent_drafts(session_id, created_at, id);
+    `,
+  },
 ];
 
 export function openDatabase(dataDir: string, clock: () => number): AppDatabase {

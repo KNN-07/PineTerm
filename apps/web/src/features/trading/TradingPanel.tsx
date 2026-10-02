@@ -6,8 +6,8 @@ import { qualifiedMarket } from '../workspace/PineTermProvider.js';
 import './trading.css';
 
 interface PendingPlacement { key: string; body: PaperOrderRequest }
-export function TradingPanel({ client, active, replay, replayReady, onSessionError }: {
-  client: ApiClient; active: ActiveChart; replay: ReplaySession | null; replayReady: boolean; onSessionError: (error: ApiError) => void;
+export function TradingPanel({ client, active, replay, replayReady, onSessionError, onSelectedAccount }: {
+  client: ApiClient; active: ActiveChart; replay: ReplaySession | null; replayReady: boolean; onSessionError: (error: ApiError) => void; onSelectedAccount: (id: string | null) => void;
 }) {
   const [accounts, setAccounts] = useState<PaperAccount[]>([]); const [selected, setSelected] = useState(''); const [view, setView] = useState<PaperAccountView | null>(null);
   const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null);
@@ -16,6 +16,7 @@ export function TradingPanel({ client, active, replay, replayReady, onSessionErr
   const [instrument, setInstrument] = useState<Instrument | null>(null);
   const [pending, setPending] = useState<PendingPlacement | null>(null); const inFlight = useRef(false);
   const accountId = replay?.accountId ?? selected; const accountRef = useRef(accountId); accountRef.current = accountId;
+  useEffect(() => { onSelectedAccount(accountId || null); }, [accountId, onSelectedAccount]);
   const fail = useCallback((failure: unknown) => {
     setError(errorMessage(failure));
     if (failure instanceof ApiError && (failure.status === 401 || failure.status === 403)) onSessionError(failure);

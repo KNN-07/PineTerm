@@ -6,8 +6,8 @@ import { Modal } from '../../Modal.js';
 import { SettingsNavigation } from './SettingsNavigation.js';
 import './alerts.css';
 
-export function IntegrationSettings({ client, onClose, onOpenData, onOpenSecurity, onOpenExecution, onSessionExpired }: {
-  client: ApiClient; onClose: () => void; onOpenData: () => void; onOpenSecurity: () => void; onOpenExecution: () => void; onSessionExpired: () => void;
+export function IntegrationSettings({ client, onClose, onOpenData, onOpenSecurity, onOpenExecution, onOpenAgent, onSessionExpired }: {
+  client: ApiClient; onClose: () => void; onOpenData: () => void; onOpenSecurity: () => void; onOpenExecution: () => void; onOpenAgent: () => void; onSessionExpired: () => void;
 }) {
   const [webhooks, setWebhooks] = useState<WebhookConfig[]>([]);
   const [telegram, setTelegram] = useState<TelegramConfig | null>(null);
@@ -85,7 +85,7 @@ export function IntegrationSettings({ client, onClose, onOpenData, onOpenSecurit
 
   return <Modal title="Settings · notifications" titleId="notification-settings-title" onClose={onClose} closeDisabled={busy !== null}>
     <div className="notification-settings">
-      <SettingsNavigation active="notifications" onData={onOpenData} onSecurity={onOpenSecurity} onNotifications={() => {}} onExecution={onOpenExecution} disabled={busy !== null} />
+      <SettingsNavigation active="notifications" onData={onOpenData} onSecurity={onOpenSecurity} onNotifications={() => {}} onExecution={onOpenExecution} onAgent={onOpenAgent} disabled={busy !== null} />
       <div className="pane-title"><h3>Durable delivery channels</h3><button type="button" disabled={busy !== null || loading} onClick={() => { setWebhookSecret(''); setTelegramToken(''); setEditingWebhook(null); setWebhookName(''); setWebhookUrl(''); setError(null); setVersion((value) => value + 1); }}>Refresh saved configuration</button></div>
       <p>Only this administrator session can configure channels. Tokens and signing secrets are write-only, encrypted by the server, and never stored in browser storage. Entered secrets are cleared when a request starts or this drawer closes.</p>
       {loading && <p role="status">Loading server configuration…</p>}

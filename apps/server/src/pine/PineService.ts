@@ -4,10 +4,12 @@ import type { MarketService } from '../market/MarketService.js';
 import type { InvalidationHub } from '../events.js';
 import { ApiError } from '../errors.js';
 import { bucketStart, nextBucket, findGaps, isTimeframe, barIssue } from '../../../../packages/domain/src/market.js';
-import type { Bar, Instrument, MarketRef } from '../../../../packages/contracts/src/market.js';
+import type { Bar, BarPage, BarRange, Instrument, MarketRef } from '../../../../packages/contracts/src/market.js';
 import type { BacktestJob, BacktestRequest, PineDataRequest, PineExecutionResult, PineRunRequest, PineValidateRequest, PineValidation, PineValue, PineDiagnostic } from '../../../../packages/contracts/src/pine.js';
 import { PineRunnerError, runnerAvailable, runDocker, RUNNER_IMAGE, type RunnerOutcome, type DataBroker } from './DockerRunner.js';
 
+export interface PineSnapshotPage extends BarPage { symbolInfo: Instrument }
+export type PineSnapshotSource = (market: MarketRef, timeframe: string, range: BarRange, signal?: AbortSignal) => Promise<PineSnapshotPage>;
 interface RevisionRow { id: string; source: string; source_hash: string }
 interface JobRow { id: string; state: BacktestJob['state']; request_json: string; diagnostic_json: string | null; created_at: number; started_at: number | null; completed_at: number | null; result_json?: string | null; provenance_json?: string | null }
 interface Snapshot { market: MarketRef; timeframe: string; from: number; to: number; bars: Bar[]; symbolInfo: Instrument; hash: string }
@@ -31,6 +33,7 @@ export class PineService {
   readonly #operations = new Set<AbortController>();
   readonly #waiters: SlotWaiter[] = [];
   readonly #tasks = new Set<Promise<void>>();
+  readonly #jobTasks = new Map<string, Promise<void>>();
   #active = 0;
   #closed = false;
 
@@ -93,9 +96,11 @@ export class PineService {
     }
   }
 
-  async #snapshot(market: MarketRef, timeframe: string, from: number, to: number, budget: number, primary: boolean, signal?: AbortSignal): Promise<Snapshot> {
+  async #snapshot(market: MarketRef, timeframe: string, from: number, to: number, budget: number, primary: boolean, signal?: AbortSignal, source?: PineSnapshotSource): Promise<Snapshot> {
     if (!isTimeframe(timeframe)) throw new ApiError(422, 'UNSUPPORTED_TIMEFRAME', 'Select a supported timeframe.');
-    const symbolInfo = structuredClone(await this.#market.getInstrument(market));
+    const firstPage = source ? await source(market, timeframe, { from, to, limit: 5000 }, signal) : undefined;
+    const symbolInfo = structuredClone(firstPage ? firstPage.symbolInfo : await this.#market.getInstrument(market));
+    if (symbolInfo.market.provider !== market.provider || symbolInfo.market.symbol !== market.symbol) throw new ApiError(422, 'INVALID_SNAPSHOT_METADATA', 'Frozen metadata must match its selected market.');
     if (!symbolInfo.timeframes.includes(timeframe)) throw new ApiError(422, 'UNSUPPORTED_TIMEFRAME', 'The selected instrument does not support this timeframe.');
     let first = bucketStart(from, timeframe);
     if (first < from) first = nextBucket(first, timeframe);
@@ -108,9 +113,11 @@ export class PineService {
     const pages: Bar[][] = [];
     let cursor = to;
     let total = 0;
+    let loadedFirst = false;
     while (cursor > from && count) {
       if (signal?.aborted) throw new PineRunnerError({ code: 'CANCELLED', message: 'Snapshot loading was cancelled.' });
-      const page = await this.#market.getConfirmedBars(market, timeframe, { from, to: cursor, limit: 5000 });
+      const page = firstPage && !loadedFirst ? firstPage : source ? await source(market, timeframe, { from, to: cursor, limit: 5000 }, signal) : await this.#market.getConfirmedBars(market, timeframe, { from, to: cursor, limit: 5000 });
+      loadedFirst = true;
       if (page.providerError || page.status === 'stale') throw new ApiError(503, 'MARKET_UNAVAILABLE', 'Confirmed market history is unavailable at the selected provider.', page.providerError);
       if (page.gaps.some((gap) => gap.from < end && gap.to > first)) throw new ApiError(422, 'DATA_GAPS', 'The requested range contains missing candles. Select and submit a new complete range.', { gaps: page.gaps });
       const bars = page.bars.filter((bar) => bar.time >= first && nextBucket(bar.time, timeframe) <= end);
@@ -138,7 +145,7 @@ export class PineService {
     this.#db.prepare('INSERT INTO backtest_snapshots(id,job_id,provider,symbol,timeframe,from_time,to_time,bars_json,symbol_info_json,snapshot_hash,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(randomUUID(), jobId, snapshot.market.provider, snapshot.market.symbol, snapshot.timeframe, snapshot.from, snapshot.to, JSON.stringify(snapshot.bars), JSON.stringify(snapshot.symbolInfo), snapshot.hash, this.#clock());
   }
 
-  #broker(request: PineRunRequest, snapshots: Map<string, Promise<Snapshot>>, signal?: AbortSignal, persistedJobId?: string): DataBroker {
+  #broker(request: PineRunRequest, snapshots: Map<string, Promise<Snapshot>>, signal?: AbortSignal, persistedJobId?: string, source?: PineSnapshotSource): DataBroker {
     let total = request.bars.length;
     return async (data: PineDataRequest) => {
       if (!data.market || data.market.provider !== request.market.provider || typeof data.market.symbol !== 'string' || !data.market.symbol || data.market.symbol.includes(':') || data.market.symbol.includes(';') || data.from !== request.from || data.to !== request.to || data.limit < 1 || data.limit > MAX_BARS || !isTimeframe(data.timeframe)) throw new ApiError(422, 'SECONDARY_REQUEST_FORBIDDEN', 'Secondary series must use the selected provider, valid raw instruments/timeframes and exactly the bounded run horizon.');
@@ -146,7 +153,7 @@ export class PineService {
       let promise = snapshots.get(key);
       if (!promise) {
         if (snapshots.size >= 21) throw new ApiError(422, 'SECONDARY_SERIES_BUDGET', 'At most 20 distinct secondary series are allowed.');
-        promise = this.#snapshot(data.market, data.timeframe, request.from, request.to, MAX_BARS - total, false, signal).then((snapshot) => {
+        promise = this.#snapshot(data.market, data.timeframe, request.from, request.to, MAX_BARS - total, false, signal, source).then((snapshot) => {
           if (snapshot.symbolInfo.quoteCurrency !== request.symbolInfo.quoteCurrency) throw new ApiError(422, 'FX_CONVERSION_UNSUPPORTED', 'Secondary data requires unsupported currency conversion.');
           if (total + snapshot.bars.length > MAX_BARS) throw new ApiError(422, 'BAR_BUDGET_EXCEEDED', 'Primary and secondary snapshots exceed 50,000 total bars.');
           total += snapshot.bars.length;
@@ -161,7 +168,7 @@ export class PineService {
     };
   }
 
-  async runSnapshot(request: PineRunRequest, signal?: AbortSignal): Promise<PineExecutionResult> {
+  async runSnapshot(request: PineRunRequest, signal?: AbortSignal, source?: PineSnapshotSource): Promise<PineExecutionResult> {
     if (!Number.isSafeInteger(request.from) || !Number.isSafeInteger(request.to) || request.from < 0 || request.from >= request.to || request.bars.length > MAX_BARS || !isTimeframe(request.timeframe) || request.symbolInfo.market.provider !== request.market.provider || request.symbolInfo.market.symbol !== request.market.symbol) throw new ApiError(422, 'INVALID_SNAPSHOT', 'Provide matching instrument metadata and a bounded raw-bar snapshot.');
     const frozen = structuredClone(request);
     const first = bucketStart(request.from, request.timeframe) === request.from ? request.from : nextBucket(request.from, request.timeframe);
@@ -172,13 +179,13 @@ export class PineService {
     const controller = new AbortController();
     const linkedSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     try {
-      const outcome = await this.#execute(frozen, this.#broker(frozen, snapshots, linkedSignal), linkedSignal);
+      const outcome = await this.#execute(frozen, this.#broker(frozen, snapshots, linkedSignal, undefined, source), linkedSignal);
       if (!outcome.result) throw new ApiError(503, 'RUNNER_UNAVAILABLE', 'The runner returned no execution result.');
       return outcome.result;
     } finally { controller.abort(); }
   }
 
-  async submit(request: BacktestRequest, signal?: AbortSignal): Promise<string> {
+  async submit(request: BacktestRequest, signal?: AbortSignal, source?: PineSnapshotSource): Promise<string> {
     if (this.#closed) throw new ApiError(503, 'RUNNER_UNAVAILABLE', 'Pine execution is shutting down.');
     if (!Number.isSafeInteger(request.from) || !Number.isSafeInteger(request.to) || request.from < 0 || request.from >= request.to) throw new ApiError(400, 'INVALID_RANGE', 'from must be earlier than to, using UTC epoch milliseconds.');
     if (!isTimeframe(request.timeframe) || bucketStart(request.from, request.timeframe) !== request.from || bucketStart(request.to, request.timeframe) !== request.to) throw new ApiError(422, 'RANGE_NOT_ALIGNED', 'Select a complete bar-aligned interval; partial boundary candles cannot enter a profit report.');
@@ -188,7 +195,7 @@ export class PineService {
     const validation = await this.validate(revision.source, request.inputs, request.props, signal);
     if (!validation.valid) throw new ApiError(422, 'INVALID_PINE', 'The script or its overrides failed compilation.', { diagnostics: validation.diagnostics });
     if (validation.declarationType !== 'strategy') throw new ApiError(422, 'STRATEGY_REQUIRED', 'Backtests require a strategy() declaration; indicators can be added to charts.');
-    const primary = await this.#snapshot(request.market, request.timeframe, request.from, request.to, MAX_BARS, true, signal);
+    const primary = await this.#snapshot(request.market, request.timeframe, request.from, request.to, MAX_BARS, true, signal, source);
     const currency = request.props.currency ?? validation.props.find((prop) => prop.name === 'currency')?.defval;
     if (currency !== primary.symbolInfo.quoteCurrency) throw new ApiError(422, 'FX_CONVERSION_UNSUPPORTED', `Strategy currency ${String(currency)} differs from quote currency ${primary.symbolInfo.quoteCurrency}; FX conversion is not available. PineTS 0.10.0 does not resolve currency.NONE to the instrument quote currency.`);
     const calcBars = request.props.calc_bars_count ?? validation.props.find((prop) => prop.name === 'calc_bars_count')?.defval;
@@ -210,9 +217,12 @@ export class PineService {
     this.#events.emit(event);
     const controller = new AbortController();
     this.#jobs.set(id, controller);
+    const abort = () => { this.#transition(id, 'cancelled', { code: 'CANCELLED', message: 'Pine execution was cancelled; no result is reported.' }); controller.abort(); };
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     const run: PineRunRequest = { type: 'run', jobId: id, source: revision.source, inputs: frozenRequest.inputs, props: frozenRequest.props, market: frozenRequest.market, timeframe: frozenRequest.timeframe, from: frozenRequest.from, to: frozenRequest.to, bars: primary.bars, symbolInfo: primary.symbolInfo };
     const snapshots = new Map<string, Promise<Snapshot>>([[`${run.market.provider}:${run.market.symbol}/${run.timeframe}`, Promise.resolve(primary)]]);
-    const task = this.#execute(run, this.#broker(run, snapshots, controller.signal, id), controller.signal, () => this.#transition(id, 'running')).then(async (outcome) => {
+    const task = this.#execute(run, this.#broker(run, snapshots, controller.signal, id, source), controller.signal, () => this.#transition(id, 'running')).then(async (outcome) => {
       if (controller.signal.aborted || !outcome.result) return;
       const allSnapshots = await Promise.all(snapshots.values());
       const series = allSnapshots.map((snapshot) => ({ market: snapshot.market, timeframe: snapshot.timeframe, from: snapshot.from, to: snapshot.to, barCount: snapshot.bars.length, snapshotHash: snapshot.hash, metadataHash: pineHash(snapshot.symbolInfo) })).sort((a, b) => `${a.market.provider}:${a.market.symbol}/${a.timeframe}`.localeCompare(`${b.market.provider}:${b.market.symbol}/${b.timeframe}`));
@@ -233,8 +243,9 @@ export class PineService {
       if (controller.signal.aborted) return;
       const diagnostic: PineDiagnostic = error instanceof PineRunnerError ? error.diagnostic : error instanceof ApiError ? { code: error.code, message: error.message } : { code: 'PINE_EXECUTION_FAILED', message: 'The isolated Pine execution could not complete.' };
       this.#transition(id, 'failed', diagnostic);
-    }).finally(() => { controller.abort(); this.#jobs.delete(id); this.#tasks.delete(task); });
+    }).finally(() => { signal?.removeEventListener('abort', abort); controller.abort(); this.#jobs.delete(id); this.#jobTasks.delete(id); this.#tasks.delete(task); });
     this.#tasks.add(task);
+    this.#jobTasks.set(id, task);
     return id;
   }
 
@@ -260,12 +271,13 @@ export class PineService {
     return rows.map((row) => ({ id: row.id, state: row.state, request: JSON.parse(row.request_json), createdAt: row.created_at, startedAt: row.started_at, completedAt: row.completed_at, diagnostic: row.diagnostic_json ? JSON.parse(row.diagnostic_json) : null, result: null, provenance: null }));
   }
 
-  cancel(id: string): BacktestJob {
+  async cancel(id: string): Promise<BacktestJob> {
     const job = this.get(id);
     if (job.state === 'queued' || job.state === 'running') {
       this.#transition(id, 'cancelled', { code: 'CANCELLED', message: 'Cancelled by the user; no result is reported.' });
       this.#jobs.get(id)?.abort();
     }
+    await this.#jobTasks.get(id);
     return this.get(id);
   }
 

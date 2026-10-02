@@ -29,6 +29,7 @@ export function SecuritySettings({
   onOpenData,
   onOpenNotifications,
   onOpenExecution,
+  onOpenAgent,
 }: {
   client: ApiClient;
   onClose: () => void;
@@ -36,6 +37,7 @@ export function SecuritySettings({
   onOpenData: () => void;
   onOpenNotifications: () => void;
   onOpenExecution: () => void;
+  onOpenAgent: () => void;
 }) {
   const { executors, loading: executorsLoading, error: executionError, refresh: refreshExecution } = useExecution();
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -141,7 +143,7 @@ export function SecuritySettings({
 
   return (
     <Modal title="Security settings" titleId="security-title" onClose={onClose} closeDisabled={busy !== null}>
-      <SettingsNavigation active="security" onData={onOpenData} onSecurity={() => {}} onNotifications={onOpenNotifications} onExecution={onOpenExecution} disabled={busy !== null || newToken !== null} />
+      <SettingsNavigation active="security" onData={onOpenData} onSecurity={() => {}} onNotifications={onOpenNotifications} onExecution={onOpenExecution} onAgent={onOpenAgent} disabled={busy !== null || newToken !== null} />
       <p>API keys grant only their selected scopes. Keep tokens outside source control and browser storage.</p>
       <p className="muted">Only the signed-in administrator can create or revoke keys. A key cannot manage security settings or create other keys.</p>
       <p className="readiness-note">Market, script, backtest, paper and live-intent routes accept their corresponding scopes. Executor claim, control and reports require an API key bound to a registered executor; an administrator session cannot impersonate that executor. Only Execution settings can enable finite live policy.</p>

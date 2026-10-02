@@ -36,7 +36,7 @@ export async function registerPineRoutes(app: FastifyInstance): Promise<void> {
     }, async (request) => ({ job: app.services.pine.get(request.params.id) }));
     routes.post<{ Params: { id: string } }>('/api/v1/backtests/:id/cancel', { config, preValidation: rejectBody,
       schema: { operationId: 'cancelBacktest', tags: ['Backtests'], summary: 'Cancel a queued/running job and kill its isolated container', security: mutationSecurity, headers: mutationHeadersSchema, params: idParamsSchema, querystring: emptyQuerySchema, response: { 200: jobResponseSchema, ...errorResponses } },
-    }, async (request) => ({ job: app.services.pine.cancel(request.params.id) }));
+    }, async (request) => ({ job: await app.services.pine.cancel(request.params.id) }));
     routes.get<{ Params: { id: string } }>('/api/v1/backtests/:id/trades.csv', { config,
       schema: { operationId: 'exportBacktestTrades', tags: ['Backtests'], summary: 'Download all open and closed trades from a completed immutable result', security, params: idParamsSchema, querystring: emptyQuerySchema, response: { 200: { type: 'string' }, ...errorResponses } },
     }, async (request, reply) => {

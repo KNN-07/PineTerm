@@ -33,6 +33,10 @@ import { NotificationService, type NotificationOptions } from './notifications/N
 import { registerNotificationRoutes } from './notifications/routes.js';
 import { ExecutionService } from './execution/ExecutionService.js';
 import { registerExecutionRoutes } from './execution/routes.js';
+import { AgentService } from './agent/AgentService.js';
+import { registerAgentRoutes } from './agent/routes.js';
+import { AgentDraftService } from './agent/AgentDraftService.js';
+import { registerAgentDraftRoutes } from './agent/draftRoutes.js';
 import './types.js';
 
 export interface BuildAppOptions {
@@ -67,7 +71,8 @@ export async function buildApp({ config, providers = {}, clock = Date.now, notif
   let notifications: NotificationService | undefined;
   let alerts: AlertService | undefined;
   let execution: ExecutionService | undefined;
-  app.addHook('preClose', async () => { await alerts?.close(); await execution?.close(); await notifications?.close(); await replay?.close(); await paper?.close(); await pine?.close(); market?.close(); events.close(); });
+  let agent: AgentService | undefined;
+  app.addHook('preClose', async () => { await agent?.close(); await alerts?.close(); await execution?.close(); await notifications?.close(); await replay?.close(); await paper?.close(); await pine?.close(); market?.close(); events.close(); });
   app.addHook('onClose', async () => {
     security?.dispose();
     secrets.dispose();
@@ -99,10 +104,13 @@ export async function buildApp({ config, providers = {}, clock = Date.now, notif
       },
     });
     await alerts.initialise();
+    const agentDrafts = new AgentDraftService(db, pine, scripts, clock, events);
+    agent = new AgentService(db, secrets, config, market, pine, paper, scripts, replay, agentDrafts, clock, events);
+    await agent.initialise();
     app.decorate('db', db);
     app.decorate('security', security);
     app.decorate('events', events);
-    app.decorate('services', { config, clock, providers: transports, secrets, market, pine, scripts, paper, replay, alerts, notifications, execution });
+    app.decorate('services', { config, clock, providers: transports, secrets, market, pine, scripts, paper, replay, alerts, notifications, execution, agent, agentDrafts });
     app.decorateRequest('principal', null);
     installErrorHandling(app);
     for (const schema of sharedSchemas) app.addSchema(schema);
@@ -149,6 +157,8 @@ export async function buildApp({ config, providers = {}, clock = Date.now, notif
     await registerAlertRoutes(app, alerts);
     await registerNotificationRoutes(app, notifications);
     await registerExecutionRoutes(app, execution);
+    await registerAgentRoutes(app, agent, security);
+    await registerAgentDraftRoutes(app);
     const hasWebBuild = existsSync(join(config.webDistDir, 'index.html'));
     if (config.mode === 'production' && !hasWebBuild) {
       throw new Error('Production web assets are missing. Run npm run build before npm start.');

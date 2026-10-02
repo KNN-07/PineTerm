@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent, PointerEvent } from 'react';
 import type { VelaWorkspace } from '@luxalgo/vela/workspace';
-import type { Instrument, InvalidationEvent, MarketRef, ReplaySession, Workspace } from '@pineterm/contracts';
+import type { AppliedAgentDraft, Instrument, InvalidationEvent, MarketRef, ReplaySession, Workspace } from '@pineterm/contracts';
 import { ApiClient, ApiError, errorMessage } from '../../api.js';
 import { ChartWorkspace } from './ChartWorkspace.js';
 import type { ActiveChart } from './ChartWorkspace.js';
@@ -18,6 +18,8 @@ import type { WorkspaceReplayBridge } from '../trading/WorkspaceReplayBridge.js'
 import { AlertPanel } from '../alerts/AlertPanel.js';
 import { ExternalTradingPanel } from '../execution/ExternalTradingPanel.js';
 import { useExecution } from '../execution/ExecutionContext.js';
+import { AgentPanel } from '../agent/AgentPanel.js';
+import type { AgentScriptSelection } from '../agent/AgentPanel.js';
 
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -31,8 +33,8 @@ const INITIAL_UI: UiState = { rightTab: 'watchlists', bottomTab: 'editor', botto
 const RIGHT_LABELS: Record<RightTab, string> = { watchlists: 'Watchlists', alerts: 'Alerts', agent: 'Agent' };
 const BOTTOM_LABELS: Record<BottomTab, string> = { editor: 'Pine Editor', tester: 'Strategy Tester', trading: 'Trading' };
 
-export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurity, onOpenNotifications, onOpenExecution, settingsOpen, onCloseSettings }: {
-  client: ApiClient; onSessionExpired: () => void; onConnection: (state: string) => void; onOpenSecurity: () => void; onOpenNotifications: () => void; onOpenExecution: () => void; settingsOpen: boolean; onCloseSettings: () => void;
+export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurity, onOpenNotifications, onOpenExecution, onOpenAgent, agentConfigVersion, settingsOpen, onCloseSettings }: {
+  client: ApiClient; onSessionExpired: () => void; onConnection: (state: string) => void; onOpenSecurity: () => void; onOpenNotifications: () => void; onOpenExecution: () => void; onOpenAgent: () => void; agentConfigVersion: number; settingsOpen: boolean; onCloseSettings: () => void;
 }) {
   const { policy: executionPolicy, error: executionError } = useExecution();
   const [selectedIntentId, setSelectedIntentId] = useState<string | null>(null);
@@ -61,6 +63,9 @@ export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurit
   const [replaySession, setReplaySession] = useState<ReplaySession | null>(null);
   const [replayLocked, setReplayLocked] = useState(false);
   const [replayReady, setReplayReady] = useState(false);
+  const [agentScript, setAgentScript] = useState<AgentScriptSelection>({ revisionId: null, name: null, sourceSaved: false, diagnostic: null });
+  const [agentPaperAccountId, setAgentPaperAccountId] = useState<string | null>(null);
+  const [appliedAgentDraft, setAppliedAgentDraft] = useState<AppliedAgentDraft | null>(null);
   const replayLockRef = useRef(false);
   const onReplayLock = useCallback((locked: boolean) => { replayLockRef.current = locked; setReplayLocked(locked); }, []);
   const storageRef = useRef<WorkspaceStorage | null>(null);
@@ -326,20 +331,24 @@ export function Terminal({ client, onSessionExpired, onConnection, onOpenSecurit
       {compact && drawer && <button className="dock-backdrop" aria-label="Close open drawer" onClick={() => { setDrawer(null); drawerOrigin.current?.focus(); }} />}
       <aside className={`right-dock dock ${drawer === 'right' ? 'is-open' : ''}`} ref={(element) => { if (drawer === 'right') dockRef.current = element; }} role={compact && drawer === 'right' ? 'dialog' : undefined} aria-modal={compact && drawer === 'right' ? true : undefined} aria-label="Watchlists, alerts and agent tools">
         <div className="dock-tabs" role="tablist" aria-label="Right dock">{(['watchlists', 'alerts', 'agent'] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={ui.rightTab === tab} onClick={() => updateUi({ rightTab: tab })}>{RIGHT_LABELS[tab]}</button>)}<button type="button" className="dock-close" onClick={() => { setDrawer(null); drawerOrigin.current?.focus(); }}>Close</button></div>
-        <div className="dock-content" role="tabpanel">{ui.rightTab === 'watchlists' ? <Watchlists client={client} stream={stream} onSelectMarket={selectMarket} onSessionError={onSessionError} selectedId={ui.watchlistId} onSelectList={onSelectList} version={watchlistVersion} /> : ui.rightTab === 'alerts' ? <AlertPanel client={client} market={active.market} timeframe={active.timeframe} replayActive={replayLocked} onOpenNotifications={onOpenNotifications} onOpenExecution={onOpenExecution} onOpenIntent={(id) => { setSelectedIntentId(id); openDock('bottom', 'trading'); }} onSessionError={onSessionError} /> : <section className="unavailable-feature"><span className="eyebrow">Not yet available</span><h2>Pi agent</h2><p>Grounded market analysis and Pine authoring arrive in milestone 8. No model has been configured and no canned analysis is shown.</p></section>}</div>
+        <div className="dock-content" role="tabpanel">
+          {ui.rightTab === 'watchlists' && <Watchlists client={client} stream={stream} onSelectMarket={selectMarket} onSessionError={onSessionError} selectedId={ui.watchlistId} onSelectList={onSelectList} version={watchlistVersion} />}
+          {ui.rightTab === 'alerts' && <AlertPanel client={client} market={active.market} timeframe={active.timeframe} replayActive={replayLocked} onOpenNotifications={onOpenNotifications} onOpenExecution={onOpenExecution} onOpenIntent={(id) => { setSelectedIntentId(id); openDock('bottom', 'trading'); }} onSessionError={onSessionError} />}
+          <div hidden={ui.rightTab !== 'agent'}><AgentPanel client={client} active={active} script={agentScript} paperAccountId={agentPaperAccountId} replay={replaySession} replayLocked={replayLocked} replayReady={replayReady} configVersion={agentConfigVersion} onOpenSettings={onOpenAgent} onSessionError={onSessionError} onApplied={(value) => { setAppliedAgentDraft(value); updateUi({ bottomTab: 'editor' }); if (compact) openDock('bottom', 'editor'); }} /></div>
+        </div>
       </aside>
       <section className={`bottom-dock dock ${drawer === 'bottom' ? 'is-open' : ''}`} ref={(element) => { if (drawer === 'bottom') dockRef.current = element; }} role={compact && drawer === 'bottom' ? 'dialog' : undefined} aria-modal={compact && drawer === 'bottom' ? true : undefined} aria-label="Pine editor, strategy tester and trading">
         <div className={`bottom-resizer ${resizing ? 'is-resizing' : ''}`} role="separator" tabIndex={0} aria-label="Resize bottom dock" aria-orientation="horizontal" aria-valuemin={120} aria-valuemax={500} aria-valuenow={Math.round(ui.bottomHeight)} onPointerDown={resizePointer} onKeyDown={resizeKeyboard} />
         <div className="dock-tabs" role="tablist" aria-label="Bottom dock">{(['editor', 'tester', 'trading'] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={ui.bottomTab === tab} onClick={() => updateUi({ bottomTab: tab })}>{BOTTOM_LABELS[tab]}</button>)}<span className="dock-context">{active.market ? qualifiedMarket(active.market) : 'No instrument'} · {active.timeframe}</span><button type="button" className="dock-close" onClick={() => { setDrawer(null); drawerOrigin.current?.focus(); }}>Close</button></div>
         <div className="dock-content" role="tabpanel">
-          <ScriptsDock client={client} workspace={pineWorkspace} active={active} replayLocked={replayLocked} tab={ui.bottomTab} onTab={(bottomTab) => updateUi({ bottomTab })} onSessionError={onSessionError} />
-          <div hidden={ui.bottomTab !== 'trading'}><div inert={replayLocked && !replaySession}><TradingPanel client={client} active={active} replay={replaySession} replayReady={replayReady} onSessionError={onSessionError} /></div><ExternalTradingPanel liveMarket={active.market} replayLocked={replayLocked} selectedIntentId={selectedIntentId} onOpenExecution={onOpenExecution} /></div>
+          <ScriptsDock client={client} workspace={pineWorkspace} active={active} replayLocked={replayLocked} tab={ui.bottomTab} onTab={(bottomTab) => updateUi({ bottomTab })} onSessionError={onSessionError} onAgentContext={setAgentScript} appliedAgentDraft={appliedAgentDraft} />
+          <div hidden={ui.bottomTab !== 'trading'}><div inert={replayLocked && !replaySession}><TradingPanel client={client} active={active} replay={replaySession} replayReady={replayReady} onSessionError={onSessionError} onSelectedAccount={setAgentPaperAccountId} /></div><ExternalTradingPanel liveMarket={active.market} replayLocked={replayLocked} selectedIntentId={selectedIntentId} onOpenExecution={onOpenExecution} /></div>
         </div>
       </section>
     </div>
     <div className="terminal-status" role="status"><span className={`connection-state ${feed?.kind === 'live' ? 'positive' : feed?.kind === 'unavailable' ? 'negative' : 'muted'}`}>● {feed?.kind ?? 'Connecting'}</span><span>{active.market ? qualifiedMarket(active.market) : 'No instrument'} · {active.timeframe}</span><span title={feed?.message}>{feed?.asOf ? `Observed ${new Date(feed.asOf).toLocaleTimeString()}` : feed?.message ?? 'Awaiting authoritative data'}{feed?.gaps ? ` · ${feed.gaps} data gaps` : ''}</span><span>{saved?.status ?? 'Unsaved'} · {executionPolicy?.enabled ? 'LIVE HANDOFF ENABLED' : executionError ? 'handoff state unavailable' : executionPolicy ? 'live handoff disabled' : 'checking handoff'}{executionPolicy && executionError ? ' · last observed' : ''}</span></div>
     <nav className="mobile-navigation" aria-label="Terminal views"><button type="button" onClick={() => setDrawer(null)} aria-pressed={!drawer}>Chart</button><button type="button" onClick={() => openDock('right', 'watchlists')} aria-pressed={drawer === 'right' && ui.rightTab === 'watchlists'}>Watchlists</button><button type="button" onClick={() => openDock('bottom', 'editor')} aria-pressed={drawer === 'bottom' && ui.bottomTab === 'editor'}>Editor</button><button type="button" onClick={() => openDock('bottom', 'trading')} aria-pressed={drawer === 'bottom' && ui.bottomTab === 'trading'}>Trading</button><button type="button" onClick={() => openDock('right', 'agent')} aria-pressed={drawer === 'right' && ui.rightTab === 'agent'}>Agent</button></nav>
-    {settingsOpen && <DataSettings client={client} onClose={onCloseSettings} onOpenSecurity={onOpenSecurity} onOpenNotifications={onOpenNotifications} onOpenExecution={onOpenExecution} onSessionError={onSessionError} onDatasetImported={(market, timeframe) => {
+    {settingsOpen && <DataSettings client={client} onClose={onCloseSettings} onOpenSecurity={onOpenSecurity} onOpenNotifications={onOpenNotifications} onOpenExecution={onOpenExecution} onOpenAgent={onOpenAgent} onSessionError={onSessionError} onDatasetImported={(market, timeframe) => {
       const workspace = workspaceRef.current;
       const provider = workspace?.chart.data.providerInstance('csv');
       if (provider instanceof PineTermProvider) workspace!.chart.data.registerProvider('csv', provider);

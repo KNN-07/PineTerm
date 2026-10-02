@@ -1,7 +1,7 @@
 import type { PineInputMeta, PinePropMeta, PineValidation, PineValue } from '@pineterm/contracts';
 
 export function PineSettings({ validation, inputs, props, onInputs, onProps }: { validation: PineValidation | null; inputs: Record<string, PineValue>; props: Record<string, PineValue>; onInputs: (values: Record<string, PineValue>) => void; onProps: (values: Record<string, PineValue>) => void }) {
-  if (!validation?.valid) return <p className="muted">Validate this Pine source to discover its input and declaration settings.</p>;
+  if (!validation?.valid) return <div className="pine-settings"><p className="muted">Validate this Pine source to discover its input and declaration settings. Existing overrides can be removed if they no longer match the source.</p>{([{ label: 'Input', values: inputs, change: onInputs }, { label: 'Property', values: props, change: onProps }] as const).map(({ label, values, change }) => Object.entries(values).map(([key, value]) => <div className="pine-setting" key={`${label}-${key}`}><span>{label} <code>{key}</code>: {JSON.stringify(value)}</span><button type="button" onClick={() => { const next = { ...values }; delete next[key]; change(next); }}>Remove {label.toLowerCase()} override {key}</button></div>))}</div>;
   const field = (meta: PineInputMeta | PinePropMeta, key: string, values: Record<string, PineValue>, change: (values: Record<string, PineValue>) => void) => {
     const input = 'id' in meta;
     const title = input ? meta.title ?? meta.name : meta.name;

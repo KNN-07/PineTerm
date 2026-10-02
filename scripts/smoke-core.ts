@@ -16,9 +16,10 @@ import { runReplayScenario } from './smoke/replay.js';
 import { runAlertsScenario } from './smoke/alerts.js';
 import { runApiClientScenario } from './smoke/api-client.js';
 import { runExecutorScenario } from './smoke/executor.js';
+import { runAgentPolicyScenario } from './smoke/agent-policy.js';
 
 const scenario = process.argv.includes('--scenario') ? process.argv[process.argv.indexOf('--scenario') + 1] : 'all';
-if (!['all', 'auth', 'data', 'workspace', 'pine', 'paper', 'replay', 'alerts', 'api-client', 'executor'].includes(scenario)) throw new Error(`Unknown smoke scenario: ${scenario}`);
+if (!['all', 'auth', 'data', 'workspace', 'pine', 'paper', 'replay', 'alerts', 'api-client', 'executor', 'agent-policy'].includes(scenario)) throw new Error(`Unknown smoke scenario: ${scenario}`);
 const runner = spawnSync('docker', ['run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '64', '--memory', '512m', '--cpus', '1', '--tmpfs', '/tmp:rw,noexec,nosuid,size=16m', 'pineterm-pine-runner:local', '--health'], { encoding: 'utf8', timeout: 15000 });
 assert.equal(runner.status, 0, runner.stderr || runner.error?.message);
 assert.equal(JSON.parse(runner.stdout).version, '0.10.0');
@@ -78,6 +79,7 @@ try {
     app = await buildApp({ config, providers: { coinbase, binance }, clock });
     await app.listen({ host: '127.0.0.1', port });
   }, async () => { await app.services.alerts.idle(); await app.services.execution.idle(); await app.services.notifications.idle(); });
+  if (scenario === 'all' || scenario === 'agent-policy') await runAgentPolicyScenario(url, headers, app);
   assert.equal((await request('/session', { method: 'DELETE', headers: deleteHeaders })).status, 204);
   assert.equal((await request('/session', { headers: { Cookie: cookie } })).status, 401);
   console.log('auth: real HTTP login, Origin rejection, CSRF rejection, one-time scoped token, revocation, logout observed');
