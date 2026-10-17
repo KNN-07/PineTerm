@@ -1,56 +1,90 @@
 .scripts-dock { height: 100%; min-height: 0; }
-.scripts-dock [hidden] { display: none !important; }
+.scripts-dock[hidden], .scripts-dock [hidden] { display: none !important; }
 .pine-editor-panel, .strategy-tester { min-width: 0; }
-.pine-toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 6px 8px; border-bottom: 1px solid #253247; }
-.pine-toolbar label { display: flex; gap: 5px; align-items: center; font-size: 11px; color: #A1AFC4; }
-.pine-toolbar input, .pine-toolbar select { max-width: 230px; min-width: 70px; }
+.pine-editor-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.pine-toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 6px 10px; border-bottom: 1px solid var(--tv-border); }
+.pine-toolbar label { display: flex; gap: 5px; align-items: center; font-size: 12px; color: var(--tv-muted); }
+.pine-toolbar input, .pine-toolbar select { max-width: 230px; min-width: 70px; width: auto; }
 .pine-toolbar button { white-space: nowrap; }
-.pine-toolbar code, .pine-setting code, .pine-handle code { font-size: 10px; color: #A1AFC4; overflow-wrap: anywhere; }
-.pine-import input { width: 155px; font-size: 11px; }
-.pine-editor-grid { display: grid; grid-template-columns: minmax(250px, 1fr) minmax(250px, 340px); min-height: 150px; }
-.pine-code { min-width: 0; height: 240px; overflow: hidden; }
-.pine-inspector { border-left: 1px solid #253247; padding: 8px; max-height: 320px; overflow: auto; }
-.pine-inspector details, .strategy-tester details { margin-bottom: 8px; }
-.pine-inspector summary, .strategy-tester summary { cursor: pointer; padding: 4px 0; }
-.pine-settings p { font-size: 11px; line-height: 1.5; color: #A1AFC4; }
-.pine-settings fieldset { margin: 6px 0; border: 1px solid #253247; }
+.pine-toolbar code, .pine-setting code, .pine-handle code { font-size: 11px; color: var(--tv-muted); overflow-wrap: anywhere; }
+
+/* TradingView-style editor bar: script menu on the left, actions on the right. */
+.editor-bar { flex: none; flex-wrap: nowrap; gap: 4px; height: 42px; padding: 0 8px 0 4px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.terminal .editor-bar button:not(.tv-icon-button) { height: 30px; min-height: 30px; flex: none; }
+.script-button .script-title { max-width: 220px; overflow: hidden; text-overflow: ellipsis; font-weight: 600; color: var(--tv-bright); }
+.dirty-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--tv-orange); }
+.terminal .editor-bar .script-name-input { width: 170px; min-width: 110px; max-width: 220px; border-color: transparent; background: transparent; }
+.terminal .editor-bar .script-name-input:hover { border-color: var(--tv-border-strong); }
+.pine-status { flex: none; padding: 0 4px; color: var(--tv-muted); font-size: 12px; white-space: nowrap; }
+.pine-status.warning { color: var(--tv-orange); }
+.terminal .editor-bar select { flex: none; width: auto; max-width: 175px; min-width: 0; font-size: 12px; }
+.script-menu-content { width: 300px; max-width: 100%; }
+
+.pine-editor-grid { display: grid; flex: 1; grid-template-columns: minmax(250px, 1fr) minmax(240px, 320px); min-height: 140px; }
+.pine-code { min-width: 0; height: 100%; min-height: 140px; overflow: hidden; }
+.pine-inspector { padding: 8px 12px; overflow: auto; border-left: 1px solid var(--tv-border); font-size: 12px; }
+.pine-inspector details, .strategy-tester details { margin-bottom: 4px; border-bottom: 1px solid var(--tv-border); }
+.pine-inspector summary, .strategy-tester summary { padding: 8px 0; color: var(--tv-text); font-weight: 600; }
+.pine-inspector > p { margin: 10px 0 0; font-size: 11px; line-height: 1.5; }
+.pine-settings p { font-size: 11px; line-height: 1.5; color: var(--tv-muted); }
+.pine-settings fieldset { margin: 6px 0; padding: 8px; border: 1px solid var(--tv-border); border-radius: 4px; }
 .pine-setting { display: grid; gap: 4px; margin: 6px 0 10px; }
-.pine-setting small { overflow-wrap: anywhere; color: #A1AFC4; }
+.pine-setting small { overflow-wrap: anywhere; color: var(--tv-muted); }
 .pine-override { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
 .pine-override input { width: auto; }
-.pine-handle { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid #253247; }
-.pine-handle strong { flex-basis: 100%; }
+.pine-handle { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid var(--tv-border); }
+.pine-handle strong { flex-basis: 100%; color: var(--tv-bright); }
 .pine-handle code { flex-basis: 100%; }
-.pine-diagnostic, .pine-notice { padding: 5px 8px; margin: 4px 0; overflow-wrap: anywhere; }
-.pine-diagnostic { color: #FB7185; background: #311b25; }
+.terminal .pine-handle button { min-height: 26px; height: 26px; padding: 0 8px; font-size: 12px; }
+.pine-diagnostic, .pine-notice { margin: 0; padding: 6px 12px; overflow-wrap: anywhere; font-size: 12px; }
+.pine-diagnostic { color: #ff8a93; background: rgb(242 54 69 / 10%); border-left: 3px solid var(--tv-red); }
 .pine-diagnostic button { margin: 4px 8px; }
-.pine-notice { color: #2DD4BF; }
-.pine-inspector pre, .strategy-tester pre { margin: 4px 0; overflow: auto; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.strategy-tester { padding: 4px 8px 12px; }
-.strategy-range { display: flex; align-items: end; gap: 7px; flex-wrap: wrap; padding: 6px 0; }
-.strategy-range label { display: grid; gap: 4px; color: #A1AFC4; font-size: 11px; }
-.strategy-tester p { font-size: 11px; line-height: 1.5; margin: 6px 0; }
-.pine-limitations { border-left: 2px solid #A1AFC4; padding: 6px 8px; background: #182233; color: #A1AFC4; }
-.strategy-metrics { display: flex; gap: 14px; flex-wrap: wrap; margin: 8px 0; }
-.strategy-metrics div { min-width: 115px; }
-.strategy-metrics dt { color: #A1AFC4; font-size: 11px; }
-.strategy-metrics dd { margin: 4px 0 0; font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
-.strategy-curves { display: grid; grid-template-columns: repeat(2, minmax(250px, 1fr)); gap: 10px; }
-.strategy-curve { margin: 6px 0; }
-.strategy-curve figcaption { font-size: 11px; color: #A1AFC4; }
+.pine-notice { color: var(--tv-text); background: var(--tv-accent-soft); border-left: 3px solid var(--tv-accent); }
+.pine-inspector pre, .strategy-tester pre { margin: 4px 0; padding: 8px; overflow: auto; border-radius: 4px; background: var(--tv-elev); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Strategy tester */
+.strategy-tester { padding: 0 0 14px; }
+.strategy-tester > :not(.pine-toolbar):not(.tester-tabs):not(.strategy-metrics) { margin-left: 12px; margin-right: 12px; }
+.strategy-tester > .pine-toolbar { min-height: 42px; }
+.strategy-tester > .pine-toolbar strong { color: var(--tv-bright); }
+.strategy-tester > .pine-toolbar > span { color: var(--tv-muted); font-size: 12px; }
+.strategy-tester > .pine-toolbar label { margin-left: auto; }
+.strategy-range { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; padding: 10px 0 4px; }
+.strategy-range label { display: grid; gap: 4px; color: var(--tv-muted); font-size: 12px; }
+.strategy-range input { width: auto; }
+.strategy-range > span { color: var(--tv-muted); font-size: 12px; align-self: center; }
+.strategy-tester p { font-size: 12px; line-height: 1.5; margin: 8px 0; }
+.pine-limitations { padding: 8px 10px; border-radius: 4px; background: var(--tv-elev); color: var(--tv-muted); font-size: 11px !important; }
+.strategy-metrics { display: flex; flex-wrap: wrap; gap: 0; margin: 10px 0 0; border-top: 1px solid var(--tv-border); border-bottom: 1px solid var(--tv-border); }
+.strategy-metrics div { flex: 1 1 140px; padding: 10px 14px; border-right: 1px solid var(--tv-border); }
+.strategy-metrics div:last-child { border-right: 0; }
+.strategy-metrics dt { color: var(--tv-muted); font-size: 12px; }
+.strategy-metrics dd { margin: 4px 0 0; color: var(--tv-bright); font-size: 18px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.strategy-metrics dd.positive { color: var(--tv-green); }
+.strategy-metrics dd.negative { color: var(--tv-red); }
+.strategy-metrics dd small { color: var(--tv-muted); font-size: 11px; }
+.tester-tabs { display: flex; gap: 2px; height: 38px; padding: 0 6px; border-bottom: 1px solid var(--tv-border); }
+.terminal .tester-tabs button { height: 100%; min-height: 0; padding: 0 12px; border: 0; border-radius: 0; background: transparent; color: var(--tv-muted); font-size: 13px; }
+.terminal .tester-tabs button:hover { color: var(--tv-text); }
+.terminal .tester-tabs button[aria-selected="true"] { color: var(--tv-bright); box-shadow: inset 0 -2px var(--tv-accent); }
+.strategy-summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 16px; margin: 12px 0; }
+.strategy-summary dt { color: var(--tv-muted); font-size: 12px; }
+.strategy-summary dd { margin: 2px 0 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.strategy-curves { display: grid; grid-template-columns: repeat(2, minmax(250px, 1fr)); gap: 12px; }
+.strategy-curve { margin: 6px 0; padding: 8px; border: 1px solid var(--tv-border); border-radius: 4px; }
+.strategy-curve figcaption { font-size: 12px; color: var(--tv-muted); }
 .strategy-curve svg { display: block; width: 100%; min-height: 100px; }
-.strategy-curve text { font-size: 10px; fill: #A1AFC4; }
+.strategy-curve text { font-size: 10px; fill: var(--tv-muted); }
 .strategy-trades { overflow: auto; }
-.strategy-trades table { border-collapse: collapse; white-space: nowrap; width: 100%; font-size: 11px; }
-.strategy-trades caption { text-align: left; padding: 6px 0; color: #A1AFC4; }
-.strategy-trades th { text-align: left; color: #A1AFC4; font-weight: 500; }
-.strategy-trades th, .strategy-trades td { padding: 5px 8px; border-bottom: 1px solid #253247; }
-.strategy-trades small { display: block; color: #A1AFC4; }
+.strategy-trades table { border-collapse: collapse; white-space: nowrap; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+.strategy-trades caption { text-align: left; padding: 8px 0; color: var(--tv-muted); }
+.strategy-trades th { text-align: left; color: var(--tv-muted); font-weight: 400; }
+.strategy-trades th, .strategy-trades td { padding: 7px 10px; border-bottom: 1px solid var(--tv-border); }
+.strategy-trades tbody tr:hover { background: var(--tv-hover); }
+.strategy-trades small { display: block; color: var(--tv-muted); }
 @media (max-width: 900px) {
+  .pine-editor-panel { height: auto; }
   .pine-editor-grid, .strategy-curves { grid-template-columns: minmax(0, 1fr); }
-  .pine-inspector { border-left: 0; border-top: 1px solid #253247; max-height: none; }
-  .pine-code { height: 260px; }
-  .pine-toolbar label { flex-wrap: wrap; }
-  .pine-toolbar input, .pine-toolbar select { max-width: 100%; }
-  .pine-toolbar { align-items: stretch; }
+  .pine-inspector { border-left: 0; border-top: 1px solid var(--tv-border); max-height: none; }
+  .pine-code { height: 280px; }
 }

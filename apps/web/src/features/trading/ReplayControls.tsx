@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { barClose, type VelaWorkspace } from '@luxalgo/vela/workspace';
 import type { Bar, BarPage, Instrument, ReplayMarket, ReplayRequest, ReplaySession } from '@pineterm/contracts';
 import { ApiClient, ApiError, errorMessage } from '../../api.js';
 import { parseMarket, qualifiedMarket } from '../workspace/PineTermProvider.js';
 import type { WorkspaceReplayBridge } from './WorkspaceReplayBridge.js';
+import { Icon } from '../../icons.js';
 import { bucketStart, nextBucket } from '../../../../../packages/domain/src/market.js';
 import './trading.css';
 
 interface LoadedCell { id: string; market: ReplayMarket['market']; timeframe: string; bars: Bar[] }
 const dateInput = (time: number): string => new Date(time).toISOString().slice(0, 16);
 
-export function ReplayControls({ client, workspace, bridge, session, onSession, onLock, onTradingReady, onSessionError }: {
+/** Stays mounted for the session lifecycle; its toolbar renders into Vela's chart strip when open. */
+export function ReplayControls({ client, workspace, bridge, session, container, open, onClose, onSession, onLock, onTradingReady, onSessionError }: {
   client: ApiClient; workspace: VelaWorkspace | null; bridge: WorkspaceReplayBridge | null; session: ReplaySession | null;
+  container: HTMLElement | null; open: boolean; onClose: () => void;
   onSession: (session: ReplaySession | null) => void; onLock: (locked: boolean) => void; onTradingReady: (ready: boolean) => void; onSessionError: (error: ApiError) => void;
 }) {
   const [from, setFrom] = useState(''); const [to, setTo] = useState('');
@@ -170,25 +174,33 @@ export function ReplayControls({ client, workspace, bridge, session, onSession, 
     finally { inFlight.current = false; setBusy(false); }
   }
 
-  return <section className="replay-controls" aria-label="Server-authoritative bar replay">
-    {!session ? <details><summary>Bar replay</summary><div className="replay-picker">
+  if (!container || (!session && !open && !busy && !error)) return null;
+  const complete = !!session && session.cursor >= session.to;
+  return createPortal(<section className="replay-controls" aria-label="Server-authoritative bar replay">
+    {!session ? <div className="replay-picker">
+      <strong className="replay-title"><Icon name="replay" size={16} />Bar replay</strong>
       <label>Start · UTC<input aria-label="Replay start UTC" type="datetime-local" value={from} onChange={event => setFrom(event.target.value)} disabled={busy} /></label>
       <label>End · UTC exclusive<input aria-label="Replay end UTC" type="datetime-local" value={to} onChange={event => setTo(event.target.value)} disabled={busy} /></label>
-      <label>Account quote currency<input aria-label="Replay quote currency" value={currency} maxLength={20} onChange={event => setCurrency(event.target.value.toUpperCase())} disabled={busy} /></label>
-      <label>Initial paper cash<input inputMode="decimal" value={cash} onChange={event => setCash(event.target.value)} disabled={busy} /></label>
-      <label>Commission · bps<input inputMode="decimal" value={fees} onChange={event => setFees(event.target.value)} disabled={busy} /></label>
-      <label>Adverse slippage · bps<input inputMode="decimal" value={slip} onChange={event => setSlip(event.target.value)} disabled={busy} /></label>
-      <button type="button" disabled={busy || !workspace} onClick={useBounds}>Use loaded common bounds</button><button type="button" disabled={busy || !workspace || !bridge} onClick={() => void start()}>Start replay</button>
+      <label>Quote currency<input aria-label="Replay quote currency" value={currency} maxLength={20} onChange={event => setCurrency(event.target.value.toUpperCase())} disabled={busy} /></label>
+      <label>Paper cash<input aria-label="Initial paper cash" inputMode="decimal" value={cash} onChange={event => setCash(event.target.value)} disabled={busy} /></label>
+      <label>Fees · bps<input aria-label="Commission bps" inputMode="decimal" value={fees} onChange={event => setFees(event.target.value)} disabled={busy} /></label>
+      <label>Slippage · bps<input aria-label="Adverse slippage bps" inputMode="decimal" value={slip} onChange={event => setSlip(event.target.value)} disabled={busy} /></label>
+      <span className="replay-buttons"><button type="button" disabled={busy || !workspace} onClick={useBounds}>Use loaded bounds</button><button type="button" className="primary" disabled={busy || !workspace || !bridge} onClick={() => void start()}><Icon name="play" size={14} />Start replay</button><button type="button" className="tv-icon-button" aria-label="Close bar replay" title="Close bar replay" disabled={busy} onClick={() => { setError(null); onClose(); }}><Icon name="close" /></button></span>
       <small>Only actual confirmed history. Boundaries must align to every chart interval; missing candles reject the full window.</small>
-    </div></details> : <div className="replay-active">
-      <strong>REPLAY · isolated paper account</strong><time dateTime={new Date(session.cursor).toISOString()}>{new Date(session.cursor).toISOString()}</time>
-      <button type="button" disabled={busy || session.cursor >= session.to || !!error} onClick={() => { pause(); void step(); }}>Step one bar</button>
-      <button type="button" disabled={!playing && (busy || session.cursor >= session.to || !!error)} onClick={() => { if (playing) pause(); else { playRef.current = true; setPlaying(true); void step(); } }}>{playing ? 'Pause' : 'Play'}</button>
-      <select aria-label="Replay bars per second" value={speed} onChange={event => setSpeed(event.target.value)}>{['0.5', '1', '2', '5'].map(value => <option key={value} value={value}>{value} bars/sec</option>)}</select>
-      <button type="button" disabled={busy} onClick={() => void start(true)}>Rewind · new account</button><button type="button" disabled={busy} onClick={() => void stop()}>Stop / Return to live</button>
-      <small>Replay cannot trade live accounts or send notifications. Independently armed server live alerts continue. {session.cursor >= session.to ? 'Window complete; stop or rewind to a fresh account.' : 'Raw-bar fills; coarse-only datasets acknowledge at bar close and exclude orders accepted mid-bar. No intrabar-path or OCO guarantee.'}</small>
+    </div> : <div className="replay-active">
+      <strong className="replay-title"><Icon name="replay" size={16} />Replay</strong>
+      <span className="replay-badge">Isolated paper account</span>
+      <time dateTime={new Date(session.cursor).toISOString()}>{new Date(session.cursor).toISOString().replace('T', ' ').slice(0, 19)} UTC</time>
+      <span className="replay-transport">
+        <button type="button" className="tv-icon-button" title="Rewind · new account" aria-label="Rewind with a new account" disabled={busy} onClick={() => void start(true)}><Icon name="rewind" /></button>
+        <button type="button" className="tv-icon-button replay-play" title={playing ? 'Pause' : 'Play'} aria-label={playing ? 'Pause' : 'Play'} disabled={!playing && (busy || complete || !!error)} onClick={() => { if (playing) pause(); else { playRef.current = true; setPlaying(true); void step(); } }}><Icon name={playing ? 'pause' : 'play'} /></button>
+        <button type="button" className="tv-icon-button" title="Forward one bar" aria-label="Step one bar" disabled={busy || complete || !!error} onClick={() => { pause(); void step(); }}><Icon name="stepForward" /></button>
+        <select aria-label="Replay bars per second" value={speed} onChange={event => setSpeed(event.target.value)}>{['0.5', '1', '2', '5'].map(value => <option key={value} value={value}>{value}×</option>)}</select>
+      </span>
+      <button type="button" className="replay-exit" disabled={busy} onClick={() => void stop()}><Icon name="stop" size={14} />Return to live</button>
+      <small>Replay cannot trade live accounts or send notifications. Independently armed server live alerts continue. {complete ? 'Window complete; stop or rewind to a fresh account.' : 'Raw-bar fills; coarse-only datasets acknowledge at bar close and exclude orders accepted mid-bar. No intrabar-path or OCO guarantee.'}</small>
     </div>}
-    {busy && <span role="status">{session ? 'Awaiting server / chart acknowledgement…' : 'Loading complete actual replay history…'}</span>}
-    {error && <span className="negative" role="alert">{error}</span>}
-  </section>;
+    {busy && <span className="replay-status" role="status">{session ? 'Awaiting server / chart acknowledgement…' : 'Loading complete actual replay history…'}</span>}
+    {error && <span className="replay-status negative" role="alert">{error}</span>}
+  </section>, container);
 }

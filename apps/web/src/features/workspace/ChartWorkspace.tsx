@@ -16,6 +16,9 @@ import type { WorkspaceReplayBridge } from '../trading/WorkspaceReplayBridge.js'
 import { qualifiedMarket } from './PineTermProvider.js';
 import { barClose } from '@luxalgo/vela/workspace';
 
+/** TradingView-dark chart palette shared with PineTerm's shell tokens in styles.css. */
+export const CHART_THEME = { background: '#131722', up: '#089981', down: '#F23645', font: '-apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif' } as const;
+
 export interface ActiveChart { cellId: string; market: MarketRef | null; timeframe: string; priceStyle: string }
 export interface ChartWorkspaceProps {
   client: ApiClient; storage: WorkspaceStorage; stream: BackendMarketStream; feeds: Record<string, FeedState>;
@@ -43,8 +46,8 @@ export function ChartWorkspace({ client, storage, stream, feeds, onFeed, onSessi
     try {
       workspace = new VelaWorkspace(host.current, {
         layout: '1', symbol: 'COINBASE:BTC-USD', timeframe: '60', priceStyle: 'candles', bars: 500,
-        theme: { background: '#0B1018', textColor: '#E6EDF7', gridColor: '#182233', borderColor: '#253247', upColor: '#2DD4BF', downColor: '#FB7185', fontFamily: 'system-ui, sans-serif' },
-        upColor: '#2DD4BF', downColor: '#FB7185', animations: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+        theme: { background: CHART_THEME.background, textColor: '#B2B5BE', gridColor: '#1E222D', borderColor: '#2A2E39', upColor: CHART_THEME.up, downColor: CHART_THEME.down, fontFamily: CHART_THEME.font },
+        upColor: CHART_THEME.up, downColor: CHART_THEME.down, animations: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
         sync: { crosshair: true }, timeframes: [...TIMEFRAMES], timezone: 'Etc/UTC', live: true,
         persist: storage.key, storage,
         providers: Object.fromEntries(providers.map((provider) => [provider.provider, () => provider])),
@@ -57,7 +60,8 @@ export function ChartWorkspace({ client, storage, stream, feeds, onFeed, onSessi
           }));
         },
         // Keep Vela's chart chrome, object tree, drawing tools, undo/redo and settings.
-        topbar: { left: ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'undo-redo'], right: ['panels', 'screenshot'] },
+        // 'actions' is where PineTerm's Alert and Replay buttons join, right after Indicators.
+        topbar: { left: ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'actions', 'undo-redo'], right: ['panels', 'screenshot'] },
       });
     } catch (error) {
       setMountError(errorMessage(error));
@@ -137,6 +141,8 @@ export function ChartWorkspace({ client, storage, stream, feeds, onFeed, onSessi
     };
     const keyboardGuard = (event: globalThis.KeyboardEvent) => {
       if (!replaySession) return;
+      // PineTerm's own replay toolbar is docked inside the chart root and must stay keyboard operable.
+      if (event.target instanceof Element && event.target.closest('.pineterm-strip')) return;
       // Native market/layout shortcuts share the chart root. Drawing tools remain pointer-accessible.
       event.stopImmediatePropagation();
       if (event.key !== 'Escape') event.preventDefault();

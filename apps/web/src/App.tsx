@@ -5,7 +5,7 @@ import { ApiClient, ApiError, errorMessage } from './api.js';
 import { SecuritySettings } from './SecuritySettings.js';
 import { Terminal } from './features/workspace/Terminal.js';
 import { IntegrationSettings } from './features/alerts/IntegrationSettings.js';
-import { ExecutionProvider, ExecutionStatus } from './features/execution/ExecutionContext.js';
+import { ExecutionProvider } from './features/execution/ExecutionContext.js';
 import { ExecutionSettings } from './features/execution/ExecutionSettings.js';
 import { AgentSettings } from './features/agent/AgentSettings.js';
 
@@ -14,7 +14,7 @@ type SessionState = 'checking' | 'signed-out' | 'signed-in' | 'unavailable';
 export function App() {
   const [client] = useState(() => new ApiClient());
   const [sessionState, setSessionState] = useState<SessionState>('checking');
-  const [connection, setConnection] = useState('Feed connecting');
+  const [, setConnection] = useState('Feed connecting');
   const [checkVersion, setCheckVersion] = useState(0);
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -22,8 +22,7 @@ export function App() {
   const [panel, setPanel] = useState<'data' | 'security' | 'notifications' | 'execution' | 'agent' | 'about' | null>(null);
   const [agentConfigVersion, setAgentConfigVersion] = useState(0);
   const loginInput = useRef<HTMLInputElement>(null);
-  const settingsButton = useRef<HTMLButtonElement>(null);
-  const aboutButton = useRef<HTMLButtonElement>(null);
+  const panelOpener = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -42,9 +41,7 @@ export function App() {
   }, [client, checkVersion]);
 
   useEffect(() => {
-    if (busy) return;
-    if (sessionState === 'signed-out') loginInput.current?.focus();
-    else if (sessionState === 'signed-in') settingsButton.current?.focus();
+    if (!busy && sessionState === 'signed-out') loginInput.current?.focus();
   }, [busy, sessionState]);
 
   const onSessionExpired = useCallback(() => {
@@ -87,32 +84,34 @@ export function App() {
     }
   }
 
+  /** Settings dialogs chain into each other; focus returns to whatever opened the first one. */
+  function openPanel(next: NonNullable<typeof panel>) {
+    if (!panel) panelOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setPanel(next);
+  }
   function closePanel() {
-    const previous = panel;
     setPanel(null);
-    if (previous === 'security' || previous === 'data' || previous === 'notifications' || previous === 'execution' || previous === 'agent') settingsButton.current?.focus();
-    else aboutButton.current?.focus();
+    const opener = panelOpener.current;
+    panelOpener.current = null;
+    if (opener?.isConnected) opener.focus();
   }
 
   return (
     <ExecutionProvider client={client} enabled={sessionState === 'signed-in'} onSessionExpired={onSessionExpired}>
     <div className={`app-shell ${sessionState === 'signed-in' ? 'signed-in-shell' : ''}`}>
       <a className="skip-link" href="#main-content">Skip to content</a>
-      <header className="app-header">
+      {sessionState !== 'signed-in' && <header className="app-header">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">P</span>
           <strong>PineTerm</strong>
-          <span className="milestone-label" role="status">{sessionState === 'signed-in' ? connection : 'Self-hosted terminal'}</span>
+          <span className="milestone-label" role="status">Self-hosted terminal</span>
         </div>
-        {sessionState === 'signed-in' && <ExecutionStatus compact onOpenExecution={() => setPanel('execution')} />}
         <nav aria-label="Application">
-          {sessionState === 'signed-in' && <button type="button" ref={settingsButton} onClick={() => setPanel('data')}>Settings</button>}
-          <button type="button" ref={aboutButton} onClick={() => setPanel('about')}>About</button>
+          <button type="button" className="ghost" onClick={() => openPanel('about')}>About</button>
           <a href={SOURCE_URL} target="_blank" rel="noopener noreferrer">Source</a>
-          {sessionState === 'signed-in' && <button type="button" onClick={() => void logout()} disabled={busy}>{busy ? 'Signing out…' : 'Sign out'}</button>}
         </nav>
-      </header>
-      {sessionState === 'signed-in' && error && <div className="terminal-notice error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}>Dismiss</button></div>}
+      </header>}
+      {sessionState === 'signed-in' && error && <div className="terminal-notice error app-notice" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}>Dismiss</button></div>}
       <main id="main-content" tabIndex={-1} className={sessionState === 'signed-in' ? 'terminal-main' : ''}>
         {sessionState === 'checking' && (
           <section className="login-card" aria-busy="true"><h1>PineTerm</h1><p role="status">Checking your administrator session…</p></section>
@@ -127,9 +126,9 @@ export function App() {
         )}
         {sessionState === 'signed-out' && (
           <section className="login-card" aria-labelledby="login-title">
-            <p className="eyebrow">Single-user · self-hosted</p>
-            <h1 id="login-title">Welcome to PineTerm</h1>
-            <p>Your charting and strategy workspace starts here. Sign in with the administrator password configured on your server.</p>
+            <span className="login-mark" aria-hidden="true">P</span>
+            <h1 id="login-title">Sign in to PineTerm</h1>
+            <p className="muted">Your charting and strategy workspace starts here. Sign in with the administrator password configured on your server.</p>
             {error && <p className="message error" role="alert">{error}</p>}
             <form onSubmit={(event) => void login(event)}>
               <div className="form-field">
@@ -141,17 +140,17 @@ export function App() {
             </form>
           </section>
         )}
-        {sessionState === 'signed-in' && <Terminal client={client} onSessionExpired={onSessionExpired} onConnection={setConnection} settingsOpen={panel === 'data'} onCloseSettings={closePanel} onOpenSecurity={() => setPanel('security')} onOpenNotifications={() => setPanel('notifications')} onOpenExecution={() => setPanel('execution')} onOpenAgent={() => setPanel('agent')} agentConfigVersion={agentConfigVersion} />}
+        {sessionState === 'signed-in' && <Terminal client={client} onSessionExpired={onSessionExpired} onConnection={setConnection} settingsOpen={panel === 'data'} onCloseSettings={closePanel} onOpenSettings={() => openPanel('data')} onOpenSecurity={() => openPanel('security')} onOpenNotifications={() => openPanel('notifications')} onOpenExecution={() => openPanel('execution')} onOpenAgent={() => openPanel('agent')} onOpenAbout={() => openPanel('about')} onSignOut={() => void logout()} signingOut={busy} agentConfigVersion={agentConfigVersion} />}
       </main>
-      <footer className="app-footer">
+      {sessionState !== 'signed-in' && <footer className="app-footer">
         <span>PineTerm · AGPL-3.0-only</span>
         <span>Charts by <a href="https://velacharts.dev" target="_blank" rel="noopener noreferrer">Vela by LuxAlgo</a></span>
         <span>Venue-qualified data · operator-driven external execution</span>
-      </footer>
-      {panel === 'security' && sessionState === 'signed-in' && <SecuritySettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => setPanel('data')} onOpenNotifications={() => setPanel('notifications')} onOpenExecution={() => setPanel('execution')} onOpenAgent={() => setPanel('agent')} />}
-      {panel === 'notifications' && sessionState === 'signed-in' && <IntegrationSettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => setPanel('data')} onOpenSecurity={() => setPanel('security')} onOpenExecution={() => setPanel('execution')} onOpenAgent={() => setPanel('agent')} />}
-      {panel === 'execution' && sessionState === 'signed-in' && <ExecutionSettings onClose={closePanel} onOpenData={() => setPanel('data')} onOpenSecurity={() => setPanel('security')} onOpenNotifications={() => setPanel('notifications')} onOpenAgent={() => setPanel('agent')} />}
-      {panel === 'agent' && sessionState === 'signed-in' && <AgentSettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => setPanel('data')} onOpenSecurity={() => setPanel('security')} onOpenNotifications={() => setPanel('notifications')} onOpenExecution={() => setPanel('execution')} onChanged={() => setAgentConfigVersion(value => value + 1)} />}
+      </footer>}
+      {panel === 'security' && sessionState === 'signed-in' && <SecuritySettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => openPanel('data')} onOpenNotifications={() => openPanel('notifications')} onOpenExecution={() => openPanel('execution')} onOpenAgent={() => openPanel('agent')} />}
+      {panel === 'notifications' && sessionState === 'signed-in' && <IntegrationSettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => openPanel('data')} onOpenSecurity={() => openPanel('security')} onOpenExecution={() => openPanel('execution')} onOpenAgent={() => openPanel('agent')} />}
+      {panel === 'execution' && sessionState === 'signed-in' && <ExecutionSettings onClose={closePanel} onOpenData={() => openPanel('data')} onOpenSecurity={() => openPanel('security')} onOpenNotifications={() => openPanel('notifications')} onOpenAgent={() => openPanel('agent')} />}
+      {panel === 'agent' && sessionState === 'signed-in' && <AgentSettings client={client} onClose={closePanel} onSessionExpired={onSessionExpired} onOpenData={() => openPanel('data')} onOpenSecurity={() => openPanel('security')} onOpenNotifications={() => openPanel('notifications')} onOpenExecution={() => openPanel('execution')} onChanged={() => setAgentConfigVersion(value => value + 1)} />}
       {panel === 'about' && <About client={client} onClose={closePanel} />}
     </div>
     </ExecutionProvider>
