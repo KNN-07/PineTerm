@@ -10,8 +10,8 @@ function conditionDescription(alert: AlertDefinition): string {
   return alert.condition.kind === 'group' ? `${alert.condition.operator.toUpperCase()}: ${alert.condition.conditions.map(leaf).join('; ')}` : leaf(alert.condition);
 }
 
-export function AlertPanel({ client, market, timeframe, replayActive, onOpenNotifications, onOpenExecution, onOpenIntent, onSessionError }: {
-  client: ApiClient; market: MarketRef | null; timeframe: string; replayActive: boolean; onOpenNotifications: () => void; onOpenExecution: () => void; onOpenIntent: (id: string) => void; onSessionError: (error: ApiError) => void;
+export function AlertPanel({ client, market, timeframe, replayActive, createRequested = false, onCreateHandled, onOpenNotifications, onOpenExecution, onOpenIntent, onSessionError }: {
+  client: ApiClient; market: MarketRef | null; timeframe: string; replayActive: boolean; createRequested?: boolean; onCreateHandled?: () => void; onOpenNotifications: () => void; onOpenExecution: () => void; onOpenIntent: (id: string) => void; onSessionError: (error: ApiError) => void;
 }) {
   const [alerts, setAlerts] = useState<AlertDefinition[]>([]);
   const [events, setEvents] = useState<AlertEvent[]>([]);
@@ -30,6 +30,11 @@ export function AlertPanel({ client, market, timeframe, replayActive, onOpenNoti
   const refresh = useCallback(() => setVersion((value) => value + 1), []);
   const fail = (failure: unknown) => { if (failure instanceof ApiError && (failure.status === 401 || failure.status === 403)) onSessionError(failure); else setError(errorMessage(failure)); };
   useEffect(() => () => operation.current?.abort(), []);
+  useEffect(() => {
+    // The header Alert button asks for a new definition once Telegram policy has loaded.
+    if (!createRequested || !telegram) return;
+    setEditor({ initial: null }); onCreateHandled?.();
+  }, [createRequested, telegram, onCreateHandled]);
   useEffect(() => {
     const controller = new AbortController(); setLoading(true);
     void Promise.all([

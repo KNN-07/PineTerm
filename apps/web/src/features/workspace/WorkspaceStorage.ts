@@ -58,6 +58,16 @@ export function validateVelaState(value: unknown): WorkspaceState {
   return state;
 }
 
+// Vela captures the shell theme into each chart's saved settings. These exact uppercase values were
+// PineTerm's previous default palette (not colour-picker output), so they follow the theme change.
+const LEGACY_PALETTE: Record<string, string> = {
+  '"#0B1018"': '"#131722"', '"#253247"': '"#2A2E39"', '"#182233"': '"#1E222D"',
+  '"#E6EDF7"': '"#B2B5BE"', '"#2DD4BF"': '"#089981"', '"#FB7185"': '"#F23645"',
+};
+function migrateLegacyPalette(raw: string): string {
+  return raw.replace(/"#(?:0B1018|253247|182233|E6EDF7|2DD4BF|FB7185)"/g, (value) => LEGACY_PALETTE[value]!);
+}
+
 /** Vela's exact get/set storage contract; server writes are serialized revision CAS. */
 export class WorkspaceStorage implements NonNullable<VelaWorkspaceOptions['storage']> {
   readonly key: string;
@@ -81,7 +91,7 @@ export class WorkspaceStorage implements NonNullable<VelaWorkspaceOptions['stora
     this.record = record;
     this.baseRevision = record.revision;
     this.key = `pineterm.workspace.${record.id}`;
-    this.raw = JSON.stringify(record.velaState);
+    this.raw = migrateLegacyPalette(JSON.stringify(record.velaState));
     this.ui = record.uiState;
     let draftRaw: string | null = null;
     try { draftRaw = localStorage.getItem(`${this.key}.draft`); }
@@ -90,7 +100,7 @@ export class WorkspaceStorage implements NonNullable<VelaWorkspaceOptions['stora
       if (draftRaw) {
         const draft = JSON.parse(draftRaw) as Draft;
         if (!draft || typeof draft.revision !== 'number' || typeof draft.name !== 'string' || !draft.uiState || typeof draft.uiState !== 'object' || !draft.velaState || typeof draft.velaState !== 'object') throw new Error('Local workspace draft is unreadable; download it before resetting it.');
-        this.raw = JSON.stringify(draft.velaState);
+        this.raw = migrateLegacyPalette(JSON.stringify(draft.velaState));
         this.ui = draft.uiState;
         this.record = { ...record, name: draft.name };
         this.baseRevision = draft.revision;

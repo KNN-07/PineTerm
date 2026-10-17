@@ -98,7 +98,6 @@ export function ExecutionStatus({ onOpenExecution, compact = false }: { onOpenEx
   return <div className={`execution-status ${policy?.enabled ? 'is-live' : ''} ${compact ? 'is-compact' : ''}`}>
     {onOpenExecution ? <button type="button" className="execution-state-label" onClick={onOpenExecution} title={error ?? notice ?? 'External execution settings'}>{label}{policy && error ? ' · stale' : ''}</button> : <strong className="execution-state-label" role="status">{label}{policy && error ? ' · stale' : ''}</strong>}
     {(policy?.enabled || error) && <button type="button" className="danger" disabled={policyBusy} onClick={() => void kill()} title="Disable new handoffs and request cancellation. Venue cancellation cannot be guaranteed.">{policyBusy ? 'Disabling…' : 'Kill handoff'}</button>}
-    {compact && (policy?.enabled || notice) && <small className="execution-cancel-warning" role="status">{policy?.enabled ? 'Kill requests cancellation · venue cancellation NOT guaranteed' : 'Handoff disabled · venue cancellation NOT guaranteed'}</small>}
     {!compact && <><p className="muted">This is a pull handoff, not direct exchange trading. Disabling requests cancellation but cannot guarantee venue cancellation.</p>{loading && <small>Refreshing authoritative execution state…</small>}{error && <p className="message error" role="alert">{error}</p>}{notice && <p className="message" role="status">{notice}</p>}</>}
   </div>;
 }

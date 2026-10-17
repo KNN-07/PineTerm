@@ -7,6 +7,8 @@ import type { ActiveChart } from '../workspace/ChartWorkspace.js';
 import { PineEditor } from './PineEditor.js';
 import { PineSettings } from './PineSettings.js';
 import { StrategyTester } from './StrategyTester.js';
+import { Dropdown, MenuItem } from '../../Dropdown.js';
+import { Icon } from '../../icons.js';
 import type { AgentScriptSelection } from '../agent/AgentPanel.js';
 import './scripts.css';
 
@@ -23,13 +25,13 @@ export function ScriptsDock({ client, workspace, active, replayLocked, tab, onTa
   const [validation, setValidation] = useState<PineValidation | null>(null);
   const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false); const [conflict, setConflict] = useState(false);
-  const [documentKey, setDocumentKey] = useState('new'); const [templateId, setTemplateId] = useState('sma');
+  const [documentKey, setDocumentKey] = useState('new');
   const [placement, setPlacement] = useState<'declaration' | 'overlay' | 'pane'>('declaration');
   const [handles, setHandles] = useState<IndicatorHandle[]>([]);
   const [preview, setPreview] = useState<WorkspaceScriptRun | null>(null);
   const [instrument, setInstrument] = useState<Instrument | null>(null);
   const [libraryVersion, setLibraryVersion] = useState(0); const [jobVersion, setJobVersion] = useState(0);
-  const booted = useRef(false); const operation = useRef<AbortController | null>(null);
+  const booted = useRef(false); const operation = useRef<AbortController | null>(null); const importInput = useRef<HTMLInputElement>(null);
   const dirty = !revision || source !== revision.source || name !== saved?.script.name || JSON.stringify(inputs) !== JSON.stringify(revision.inputs) || JSON.stringify(props) !== JSON.stringify(revision.props);
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty;
   const openedAgentRevision = useRef<string | null>(null);
@@ -156,11 +158,11 @@ export function ScriptsDock({ client, workspace, active, replayLocked, tab, onTa
       workspace?.root.dispatchEvent(new Event('pineterm:pine-state'));
     } catch (failure) { fail(failure); } finally { operation.current = null; setBusy(false); }
   }
-  function newScript(template = false) {
+  function newScript(templateId?: string) {
     if (dirty && booted.current && !window.confirm('Discard this unsaved Pine draft?')) return;
     try {
-      if (template && PINE_TEMPLATES.find((entry) => entry.id === templateId)?.kind === 'strategy' && !instrument) throw new Error('Wait for active instrument quote currency metadata before creating a strategy template.');
-      const created = template ? createPineTemplate(templateId, instrument?.quoteCurrency ?? 'USD') : null;
+      if (templateId && PINE_TEMPLATES.find((entry) => entry.id === templateId)?.kind === 'strategy' && !instrument) throw new Error('Wait for active instrument quote currency metadata before creating a strategy template.');
+      const created = templateId ? createPineTemplate(templateId, instrument?.quoteCurrency ?? 'USD') : null;
       setSaved(null); setRevision(null); setRevisions([]); setName(created?.name ?? 'Untitled'); setSource(created?.source ?? EMPTY_SOURCE); setInputs({}); setProps({}); setValidation(null); setConflict(false); setError(null); setPlacement('declaration'); setDocumentKey(`new:${crypto.randomUUID()}`); booted.current = true;
       setNotice(created?.kind === 'strategy' ? `New strategy source fixes currency to ${instrument!.quoteCurrency}. Existing/imported source is not rewritten when you switch venues.` : 'New editable Pine draft. Save preserves an immutable revision.');
     } catch (failure) { fail(failure); }
@@ -179,29 +181,34 @@ export function ScriptsDock({ client, workspace, active, replayLocked, tab, onTa
 
   return <div className="scripts-dock" hidden={tab === 'trading'}>
     <section className="pine-editor-panel" hidden={tab !== 'editor'} aria-label="Pine editor and editable script library">
-      <div className="pine-toolbar">
-        <label>Library<select aria-label="Pine script library" value={saved?.script.id ?? ''} disabled={busy} onChange={(event) => { if (event.target.value) void selectScript(event.target.value); }}>
-          <option value="">Unsaved draft</option>
-          {saved && !scripts.some((row) => row.id === saved.script.id) && <option value={saved.script.id}>{saved.script.name} · archived / removed from active library</option>}
-          {scripts.map((row) => <option key={row.id} value={row.id}>{row.name} · r{row.revision}</option>)}
-        </select></label>
-        <label>Name<input aria-label="Script name" value={name} maxLength={100} disabled={busy} onChange={(event) => { setName(event.target.value); booted.current = true; }} /></label>
-        <button type="button" onClick={() => newScript()} disabled={busy}>New script</button>
-        <label>Template<select aria-label="Pine template" value={templateId} disabled={busy} onChange={(event) => setTemplateId(event.target.value)}>{PINE_TEMPLATES.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <button type="button" onClick={() => newScript(true)} disabled={busy}>New from template</button>
-        <label className="pine-import">Import .pine<input aria-label="Import Pine file" type="file" accept=".pine,text/plain" disabled={busy} onChange={(event) => { void importPine(event.target.files?.[0]); event.target.value = ''; }} /></label>
-        <button type="button" onClick={() => { const url = URL.createObjectURL(new Blob([source], { type: 'text/plain;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = `${name || 'script'}.pine`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }}>Export .pine</button>
-      </div>
-      <div className="pine-toolbar">
+      <input ref={importInput} type="file" accept=".pine,text/plain" hidden aria-label="Import Pine file" disabled={busy} onChange={(event) => { void importPine(event.target.files?.[0]); event.target.value = ''; }} />
+      <div className="pine-toolbar editor-bar">
+        <Dropdown className="script-menu" buttonClassName="tv-toolbar-button script-button" title="Open or create a script" label={<><span className="script-title">{saved?.script.name ?? 'Unsaved draft'}</span>{dirty && <span className="dirty-dot" title="Unsaved changes" />}<Icon name="chevronDown" size={14} /></>}>{(close) => <div className="script-menu-content">
+          <div className="tv-menu-title">Create new</div>
+          <MenuItem icon={<Icon name="plus" />} disabled={busy} onSelect={() => { close(); newScript(); }}>Blank indicator</MenuItem>
+          {PINE_TEMPLATES.map((item) => <MenuItem key={item.id} icon={<Icon name="code" />} hint={item.kind} disabled={busy} onSelect={() => { close(); newScript(item.id); }}>{item.name}</MenuItem>)}
+          <div className="tv-menu-separator" />
+          <div className="tv-menu-title">Open script</div>
+          <div className="tv-menu-list">
+            {saved && !scripts.some((row) => row.id === saved.script.id) && <MenuItem icon={<Icon name="check" />} checked disabled onSelect={() => {}}>{saved.script.name} · archived / removed from active library</MenuItem>}
+            {scripts.map((row) => <MenuItem key={row.id} checked={row.id === saved?.script.id} icon={row.id === saved?.script.id ? <Icon name="check" /> : null} hint={`r${row.revision}`} disabled={busy} onSelect={() => { close(); if (row.id !== saved?.script.id) void selectScript(row.id); }}>{row.name}</MenuItem>)}
+            {!scripts.length && <p className="tv-menu-footnote">No saved scripts yet.</p>}
+          </div>
+          <div className="tv-menu-separator" />
+          <MenuItem icon={<Icon name="upload" />} disabled={busy} onSelect={() => { close(); importInput.current?.click(); }}>Import .pine…</MenuItem>
+          <MenuItem icon={<Icon name="download" />} onSelect={() => { close(); const url = URL.createObjectURL(new Blob([source], { type: 'text/plain;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = `${name || 'script'}.pine`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }}>Export .pine</MenuItem>
+          <MenuItem icon={<Icon name="plus" />} disabled={busy || !name.trim()} onSelect={() => { close(); void action('copy'); }}>Save as copy</MenuItem>
+          <MenuItem icon={<Icon name="trash" />} danger disabled={busy || !saved} onSelect={() => { close(); void action('archive'); }}>Archive script</MenuItem>
+        </div>}</Dropdown>
+        <input className="script-name-input" aria-label="Script name" value={name} maxLength={100} disabled={busy} onChange={(event) => { setName(event.target.value); booted.current = true; }} />
+        <span className={`pine-status ${dirty ? 'warning' : ''}`} role="status">{busy ? 'Working…' : dirty ? 'Unsaved' : `Saved r${revision?.revision}`}</span>
+        {saved && <select className="revision-select" aria-label="Script revision history" value={revision?.id ?? ''} disabled={busy} onChange={(event) => { const selected = revisions.find((row) => row.id === event.target.value); if (selected && (!dirty || window.confirm('Discard this draft and restore the selected immutable revision?'))) restore(saved, selected); }}>{revisions.map((row) => <option value={row.id} key={row.id}>r{row.revision} · {new Date(row.createdAt).toISOString().replace('T', ' ').slice(0, 16)}</option>)}</select>}
+        <span className="toolbar-spacer" />
+        <button type="button" className="ghost" onClick={() => void action('validate')} disabled={busy}>Validate</button>
+        <button type="button" className="ghost" onClick={() => void action('backtest')} disabled={busy || conflict || !active.market}>Backtest</button>
+        <select className="placement-select" aria-label="Indicator placement" value={placement} disabled={busy} onChange={(event) => setPlacement(event.target.value as typeof placement)}><option value="declaration">Source declaration</option><option value="overlay">Price overlay</option><option value="pane">Separate pane</option></select>
+        <button type="button" className="ghost accent" onClick={() => void action('chart')} disabled={busy || !workspace}><Icon name="chart" size={16} />Add to chart</button>
         <button type="button" className="primary" onClick={() => void action('save')} disabled={busy || conflict || !name.trim()}>Save</button>
-        <button type="button" onClick={() => void action('copy')} disabled={busy || !name.trim()}>Save as copy</button>
-        <button type="button" onClick={() => void action('validate')} disabled={busy}>Validate</button>
-        <label>Placement<select aria-label="Indicator placement" value={placement} disabled={busy} onChange={(event) => setPlacement(event.target.value as typeof placement)}><option value="declaration">Source declaration</option><option value="overlay">Price overlay</option><option value="pane">Separate pane</option></select></label>
-        <button type="button" onClick={() => void action('chart')} disabled={busy || !workspace}>Add to chart</button>
-        <button type="button" onClick={() => void action('backtest')} disabled={busy || conflict || !active.market}>Backtest</button>
-        <button type="button" onClick={() => void action('archive')} disabled={busy || !saved}>Archive</button>
-        <span role="status">{busy ? 'Working…' : dirty ? 'Unsaved draft' : `Saved r${revision?.revision}`}</span>
-        {saved && <label>Revision<select aria-label="Script revision history" value={revision?.id ?? ''} disabled={busy} onChange={(event) => { const selected = revisions.find((row) => row.id === event.target.value); if (selected && (!dirty || window.confirm('Discard this draft and restore the selected immutable revision?'))) restore(saved, selected); }}>{revisions.map((row) => <option value={row.id} key={row.id}>r{row.revision} · {new Date(row.createdAt).toISOString()}</option>)}</select></label>}
       </div>
       {error && <div className="pine-diagnostic" role="alert">{error}{conflict && <><button type="button" disabled={busy} onClick={() => { if (saved && window.confirm('Discard this local draft and reload latest server revision?')) void selectScript(saved.script.id, true); }}>Reload server revision</button><span>Save as copy preserves your draft; there is no force overwrite.</span></>}</div>}{notice && <p className="pine-notice" role="status">{notice}</p>}
       {validation?.diagnostics.map((diagnostic, index) => <p key={index} className="pine-diagnostic" role="alert">{diagnostic.code}: {diagnostic.message}{diagnostic.line === undefined ? '' : ` · line ${diagnostic.line}`}{diagnostic.column === undefined ? '' : `:${diagnostic.column}`}</p>)}
